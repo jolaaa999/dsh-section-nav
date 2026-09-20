@@ -1,0 +1,5 @@
+# dsh-section-nav bundle patch.
+# Install with: dsh plugin --profile web add github:jolaaa999/dsh-section-nav
+- insert:
+    - id: dsh-section-nav
+      name: dsh-section-nav

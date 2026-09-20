@@ -1,0 +1,18 @@
+# Third-party notices
+
+## Section Nav for ChatGPT
+
+This plugin reuses and adapts source code, component structure, CSS, and
+behavior from **Section Nav for ChatGPT** by scandishoper:
+
+- Repository: https://github.com/scandishoper/Section-Nav-for-ChatGPT
+- License: MIT
+- Copyright: Copyright (c) 2026 scandishoper
+
+The adapted portions include the ChatGPT section parser, answer/section
+trackers, rail placement, bookmark storage and resolver, recovery helper, and
+the rail/drawer React components. The ChatGPT DOM adapter and extension
+manifest were replaced with a DeepSeek Harness adapter and a `dsh` bundle
+manifest.
+
+See `LICENSE` for the full MIT permission notice applicable to those portions.
