@@ -12,7 +12,7 @@ import { ConversationRouteWatcher } from "../core/conversationRouteWatcher";
 import { ConversationWatcher } from "../core/conversationWatcher";
 import { HIDDEN_RAIL_POSITION, PositionManager, type RailPosition } from "../core/positionManager";
 import { navigateToSection } from "../core/sectionNavigation";
-import { parseSections } from "../core/sectionParser";
+import { parseTurnSections } from "../core/turnParser";
 import { SectionTracker } from "../core/sectionTracker";
 import { App } from "./components/App";
 import { getOrCreateExtensionRoot } from "./extensionRoot";
@@ -384,8 +384,7 @@ export function startSectionNav(ctx: PluginContext): () => void {
   });
 
   const parseAllSections = (): Section[] =>
-    adapter.getAssistantMessages()
-      .flatMap((message, index) => parseSections(message, adapter, index));
+    parseTurnSections(conversationKey, adapter);
 
   const updateActiveSections = () => {
     const nextSections = parseAllSections();
@@ -570,6 +569,7 @@ export function startSectionNav(ctx: PluginContext): () => void {
   answerTracker.start();
   routeWatcher.start();
   positionManager.setTarget(adapter.getConversationContainer());
+  updateActiveSections();
   watchdogTimerId = window.setInterval(() => {
     if (destroyed || routeWatcher.sync()) {
       return;
@@ -577,6 +577,7 @@ export function startSectionNav(ctx: PluginContext): () => void {
 
     conversationWatcher.refreshContainer();
     answerTracker.refreshMessages();
+    updateActiveSections();
 
     if (answerTracker.getActiveAnswer() === null) {
       positionManager.setTarget(adapter.getConversationContainer());

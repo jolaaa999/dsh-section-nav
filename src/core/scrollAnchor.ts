@@ -102,8 +102,10 @@ export function nudgeTowardTurn(
     return false;
   }
 
-  const mountedTurns = adapter
-    .getAssistantMessages()
+  const sourceMessages = bookmark.kind === "turn"
+    ? adapter.getUserMessages()
+    : adapter.getAssistantMessages();
+  const mountedTurns = sourceMessages
     .map((message) => ({
       message,
       turnIndex: adapter.getTurnIndex(message),

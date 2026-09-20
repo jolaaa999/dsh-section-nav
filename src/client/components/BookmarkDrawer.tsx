@@ -76,6 +76,8 @@ export function BookmarkDrawer({
                         ? t("locating")
                         : unresolved
                         ? t("unavailable")
+                        : bookmark.kind === "turn"
+                        ? t("messageMeta", { index: bookmark.sectionIndex + 1 })
                         : t("sectionMeta", {
                             level: bookmark.sectionLevel,
                             index: bookmark.sectionIndex + 1,

@@ -37,13 +37,17 @@ export function SectionRail({
     return null;
   }
 
+  const turnMode = sections.length > 0 && sections.every((section) => section.kind === "turn");
   const groups: SectionGroup[] = [];
-  for (const section of sections) {
-    const last = groups.at(-1);
-    if (last !== undefined && last.key === section.answerKey) {
-      last.sections.push(section);
-    } else {
-      groups.push({ key: section.answerKey, sections: [section] });
+
+  if (!turnMode) {
+    for (const section of sections) {
+      const last = groups.at(-1);
+      if (last !== undefined && last.key === section.answerKey) {
+        last.sections.push(section);
+      } else {
+        groups.push({ key: section.answerKey, sections: [section] });
+      }
     }
   }
 
@@ -51,6 +55,18 @@ export function SectionRail({
     ? sections.find((section) => section.id === activeSectionId)?.answerKey ?? groups.at(-1)?.key
     : groups.at(-1)?.key;
   let historyIndex = 0;
+
+  const renderItem = (section: Section) => (
+    <SectionRailItem
+      active={section.id === activeSectionId}
+      bookmarked={bookmarkedSectionKeys.has(section.key)}
+      key={section.id}
+      onSelect={onSectionSelect}
+      onToggleBookmark={onToggleBookmark}
+      section={section}
+      t={t}
+    />
+  );
 
   return (
     <nav
@@ -76,6 +92,10 @@ export function SectionRail({
       </div>
       {sections.length === 0 ? (
         <div className="section-rail-empty">{t("emptySections")}</div>
+      ) : turnMode ? (
+        <ol className="section-rail-list">
+          {sections.map(renderItem)}
+        </ol>
       ) : (
         <ol className="section-rail-list">
           {groups.map((group) => {
@@ -88,17 +108,7 @@ export function SectionRail({
                   {isCurrent ? t("currentAnswer") : t("historyAnswer", { index: historyIndex })}
                 </div>
                 <ol className="section-rail-group-list">
-                  {group.sections.map((section) => (
-                    <SectionRailItem
-                      active={section.id === activeSectionId}
-                      bookmarked={bookmarkedSectionKeys.has(section.key)}
-                      key={section.id}
-                      onSelect={onSectionSelect}
-                      onToggleBookmark={onToggleBookmark}
-                      section={section}
-                      t={t}
-                    />
-                  ))}
+                  {group.sections.map(renderItem)}
                 </ol>
               </li>
             );

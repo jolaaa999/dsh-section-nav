@@ -11,6 +11,7 @@ const SELECTORS = {
   chatFlow: '[data-chat-flow]',
   assistantRow: '[data-chat-flow-kind="assistant-step"]',
   heading: 'h1, h2, h3',
+  userRow: '[data-chat-flow-kind="user"], [data-chat-flow-kind="steering"]',
   thought: '[data-variant="think"]',
 } as const
 
@@ -30,6 +31,8 @@ export interface DshAdapter {
   getConversationContainer(): HTMLElement | null
   /** Visible assistant answer rows that contain section headings, in transcript order. */
   getAssistantMessages(): HTMLElement[]
+  /** Visible user messages, in transcript order. */
+  getUserMessages(): HTMLElement[]
   /** Find an assistant answer by the stable key stored in a bookmark. */
   getMessageById(messageId: string): HTMLElement | null
   /** Find an assistant answer by its numeric turn index. */
@@ -110,6 +113,14 @@ export function createDshAdapter(options: DshAdapterOptions = {}): DshAdapter {
       return uniqueElements(
         Array.from(container.querySelectorAll<HTMLElement>(SELECTORS.assistantRow))
           .filter((element) => !element.hasAttribute('hidden') && hasSectionHeadings(element)),
+      )
+    },
+
+    getUserMessages() {
+      const container = this.getConversationContainer() ?? document
+      return uniqueElements(
+        Array.from(container.querySelectorAll<HTMLElement>(SELECTORS.userRow))
+          .filter((element) => !element.hasAttribute('hidden')),
       )
     },
 

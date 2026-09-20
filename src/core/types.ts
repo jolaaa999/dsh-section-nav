@@ -5,7 +5,8 @@ export interface Section {
   answerIndex: number;
   answerKey: string;
   depth: number;
-  element: HTMLHeadingElement;
+  element: HTMLElement;
+  kind?: "heading" | "turn";
   headingPath: string;
   id: string;
   index: number;
@@ -27,7 +28,8 @@ export interface Bookmark {
   createdAt: number;
   headingPath?: string;
   id: string;
-  locatorVersion?: 2;
+  kind?: "heading" | "turn";
+  locatorVersion?: 2 | 3;
   messageId?: string;
   nextHeadingHash?: string;
   note?: string;

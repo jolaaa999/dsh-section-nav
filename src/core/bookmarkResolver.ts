@@ -2,6 +2,7 @@ import { normalizeText } from "./text";
 import type { Bookmark, Section } from "./types";
 import type { DshAdapter } from "./adapter";
 import { parseSections } from "./sectionParser";
+import { parseTurnSections } from "./turnParser";
 
 function getBookmarkMessageId(bookmark: Bookmark): string | null {
   if (bookmark.messageId) {
@@ -102,6 +103,33 @@ function getAnswerIndex(answer: HTMLElement, adapter: DshAdapter): number {
 }
 
 export function bookmarkMatchesSection(bookmark: Bookmark, section: Section): boolean {
+  const bookmarkKind = bookmark.kind ?? (bookmark.locatorVersion === 3 ? "turn" : "heading");
+  const sectionKind = section.kind ?? "heading";
+
+  if (bookmarkKind === "turn" || sectionKind === "turn") {
+    if (bookmarkKind !== "turn" || sectionKind !== "turn") {
+      return false;
+    }
+
+    if (bookmark.sectionKey === section.key) {
+      return true;
+    }
+
+    const sameMessage =
+      (bookmark.messageId !== undefined && bookmark.messageId === section.messageId) ||
+      (bookmark.turnIndex !== undefined && bookmark.turnIndex === section.turnIndex) ||
+      bookmark.answerKey === section.answerKey;
+
+    if (!sameMessage) {
+      return false;
+    }
+
+    return (
+      bookmark.sectionIndex === section.index ||
+      (bookmark.sectionTextHash !== undefined && bookmark.sectionTextHash === section.textHash)
+    );
+  }
+
   if (bookmark.sectionKey === section.key) {
     return true;
   }
@@ -129,6 +157,10 @@ export function resolveBookmarkAnswer(
   bookmark: Bookmark,
   adapter: DshAdapter,
 ): HTMLElement | null {
+  if (bookmark.kind === "turn" || bookmark.locatorVersion === 3) {
+    return null;
+  }
+
   const messageId = getBookmarkMessageId(bookmark);
 
   if (messageId) {
@@ -167,10 +199,30 @@ export function resolveBookmarkAnswer(
   return null;
 }
 
+function resolveTurnBookmark(bookmark: Bookmark, adapter: DshAdapter): Section | null {
+  const sections = parseTurnSections(bookmark.conversationKey, adapter);
+  const exactMatch = sections.find((section) => bookmarkMatchesSection(bookmark, section));
+
+  if (exactMatch) {
+    return exactMatch;
+  }
+
+  const normalizedBookmarkText = normalizeText(bookmark.sectionText).toLocaleLowerCase();
+  const compatibleSections = sections.filter(
+    (section) => normalizeText(section.text).toLocaleLowerCase() === normalizedBookmarkText,
+  );
+
+  return compatibleSections.length === 1 ? (compatibleSections[0] ?? null) : null;
+}
+
 export function resolveBookmark(
   bookmark: Bookmark,
   adapter: DshAdapter,
 ): Section | null {
+  if (bookmark.kind === "turn" || bookmark.locatorVersion === 3) {
+    return resolveTurnBookmark(bookmark, adapter);
+  }
+
   const answer = resolveBookmarkAnswer(bookmark, adapter);
 
   if (answer) {

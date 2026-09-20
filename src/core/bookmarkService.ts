@@ -16,7 +16,7 @@ function isBookmark(value: unknown): value is Bookmark {
     typeof bookmark.id === "string" &&
     typeof bookmark.conversationKey === "string" &&
     (bookmark.answerIndex === undefined || typeof bookmark.answerIndex === "number") &&
-    (bookmark.locatorVersion === undefined || bookmark.locatorVersion === 2) &&
+    (bookmark.locatorVersion === undefined || bookmark.locatorVersion === 2 || bookmark.locatorVersion === 3) &&
     (bookmark.messageId === undefined || typeof bookmark.messageId === "string") &&
     (bookmark.turnIndex === undefined || typeof bookmark.turnIndex === "number") &&
     (bookmark.headingPath === undefined || typeof bookmark.headingPath === "string") &&
@@ -47,7 +47,8 @@ function applySectionLocator(bookmark: Bookmark, section: Section): Bookmark {
     answerIndex: section.answerIndex,
     answerKey: section.answerKey,
     headingPath: section.headingPath,
-    locatorVersion: 2,
+    kind: section.kind ?? "heading",
+    locatorVersion: section.kind === "turn" ? 3 : 2,
     ...(section.messageId ? { messageId: section.messageId } : {}),
     ...(section.nextHeadingHash ? { nextHeadingHash: section.nextHeadingHash } : {}),
     ...(section.previousHeadingHash
