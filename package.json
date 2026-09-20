@@ -1,6 +1,6 @@
 {
   "name": "dsh-section-nav",
-  "version": "0.1.4",
+  "version": "0.1.6",
   "description": "DSH plugin: a section navigation rail and local chapter bookmarks for the current assistant answer in DeepSeek Harness chat.",
   "type": "module",
   "main": "lib/index.js",

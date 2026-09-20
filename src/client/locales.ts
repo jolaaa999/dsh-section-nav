@@ -8,10 +8,10 @@ export type Translate = (key: string, params?: Record<string, string | number>) 
 
 /** Chinese copy, matching the original Section Nav wording. */
 export const zh: Record<string, string> = {
-  sections: 'Sections',
+  sections: '目录',
   bookmarkOpen: '打开书签列表，共 {count} 项',
   bookmarkTitle: '书签（{count}）',
-  emptySections: '当前回答无章节',
+  emptySections: '当前回答没有 # / ## / ### 标题，无法生成目录',
   jumpToSection: '跳转到章节：{text}',
   bookmarkSection: '收藏章节：{text}',
   unbookmarkSection: '取消收藏章节：{text}',
@@ -33,7 +33,7 @@ export const en: Record<string, string> = {
   sections: 'Sections',
   bookmarkOpen: 'Open bookmarks, {count} total',
   bookmarkTitle: 'Bookmarks ({count})',
-  emptySections: 'No sections in the current answer',
+  emptySections: 'No # / ## / ### headings in this answer',
   jumpToSection: 'Jump to section: {text}',
   bookmarkSection: 'Bookmark section: {text}',
   unbookmarkSection: 'Remove bookmark: {text}',

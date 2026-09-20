@@ -417,6 +417,10 @@ export function startSectionNav(ctx: PluginContext): () => void {
       if (mutation.messagesChanged) {
         answerTracker.refreshMessages();
 
+        if (answerTracker.getActiveAnswer() === null) {
+          positionManager.setTarget(adapter.getConversationContainer());
+        }
+
         if (unresolvedBookmarkIds.size > 0) {
           unresolvedBookmarkIds = new Set();
           render();
@@ -440,7 +444,7 @@ export function startSectionNav(ctx: PluginContext): () => void {
       positionManager.setTarget(
         activeAnswer
           ? (adapter.getMessageContent(activeAnswer.element) ?? activeAnswer.element)
-          : null,
+          : adapter.getConversationContainer(),
       );
       sectionTracker.setSections(sections);
       render();
@@ -490,7 +494,7 @@ export function startSectionNav(ctx: PluginContext): () => void {
     unresolvedBookmarkIds = new Set();
     conversationWatcher.setActiveAnswer(null);
     answerTracker.reset();
-    positionManager.setTarget(null);
+    positionManager.setTarget(adapter.getConversationContainer());
     sectionTracker.setSections([]);
     render();
     void loadBookmarks(conversationKey, conversationVersion);
@@ -564,6 +568,7 @@ export function startSectionNav(ctx: PluginContext): () => void {
   conversationWatcher.start();
   answerTracker.start();
   routeWatcher.start();
+  positionManager.setTarget(adapter.getConversationContainer());
   watchdogTimerId = window.setInterval(() => {
     if (destroyed || routeWatcher.sync()) {
       return;
@@ -571,6 +576,10 @@ export function startSectionNav(ctx: PluginContext): () => void {
 
     conversationWatcher.refreshContainer();
     answerTracker.refreshMessages();
+
+    if (answerTracker.getActiveAnswer() === null) {
+      positionManager.setTarget(adapter.getConversationContainer());
+    }
   }, 1000);
   document.addEventListener("click", handleDocumentClick);
   document.addEventListener("pointerdown", handleDocumentPointerDown, true);
