@@ -20,9 +20,9 @@ const NATIVE_TOC_SAFE_AREA = 88;
 const FULL_BREAKPOINT = 1400;
 const COMPACT_BREAKPOINT = 1200;
 
-const FULL_MODE: ModeConfiguration = { gap: 24, mode: "full", width: 148 };
-const COMPACT_MODE: ModeConfiguration = { gap: 18, mode: "compact", width: 112 };
-const MINI_MODE: ModeConfiguration = { gap: 12, mode: "mini", width: 32 };
+const FULL_MODE: ModeConfiguration = { gap: 26, mode: "full", width: 172 };
+const COMPACT_MODE: ModeConfiguration = { gap: 18, mode: "compact", width: 136 };
+const MINI_MODE: ModeConfiguration = { gap: 12, mode: "mini", width: 38 };
 
 export const HIDDEN_RAIL_POSITION: RailPosition = {
   left: 0,
@@ -40,11 +40,11 @@ function positionsEqual(first: RailPosition, second: RailPosition): boolean {
 
 function getPreferredModes(viewportWidth: number): ModeConfiguration[] {
   if (viewportWidth >= FULL_BREAKPOINT) {
-    return [FULL_MODE, COMPACT_MODE, MINI_MODE];
+    return [FULL_MODE, COMPACT_MODE];
   }
 
   if (viewportWidth >= COMPACT_BREAKPOINT) {
-    return [COMPACT_MODE, MINI_MODE];
+    return [COMPACT_MODE];
   }
 
   return [MINI_MODE];
@@ -145,6 +145,22 @@ export class PositionManager {
         });
         return;
       }
+    }
+
+    // DSH chat columns can run close to the viewport edge, leaving no room to
+    // the right even for the mini rail. Keep the directory reachable by
+    // anchoring a compact or mini rail to the viewport edge instead of
+    // disappearing entirely.
+    const fallback = viewportWidth >= 900 ? COMPACT_MODE : MINI_MODE;
+    const fallbackLeft = Math.max(8, Math.round(viewportWidth - fallback.width - 12));
+
+    if (fallbackLeft + fallback.width <= viewportWidth - 4) {
+      this.updatePosition({
+        left: fallbackLeft,
+        mode: fallback.mode,
+        width: fallback.width,
+      });
+      return;
     }
 
     this.updatePosition(HIDDEN_RAIL_POSITION);
