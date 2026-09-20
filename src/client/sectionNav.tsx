@@ -383,12 +383,12 @@ export function startSectionNav(ctx: PluginContext): () => void {
     },
   });
 
-  const updateActiveSections = () => {
-    if (!activeAnswer?.element.isConnected) {
-      return;
-    }
+  const parseAllSections = (): Section[] =>
+    adapter.getAssistantMessages()
+      .flatMap((message, index) => parseSections(message, adapter, index));
 
-    const nextSections = parseSections(activeAnswer.element, adapter, activeAnswer.index);
+  const updateActiveSections = () => {
+    const nextSections = parseAllSections();
 
     if (sectionsEqual(sections, nextSections)) {
       return;
@@ -397,7 +397,9 @@ export function startSectionNav(ctx: PluginContext): () => void {
     sections = nextSections;
     cacheBookmarkTargets(sections);
     positionManager.setTarget(
-      adapter.getMessageContent(activeAnswer.element) ?? activeAnswer.element,
+      activeAnswer
+        ? (adapter.getMessageContent(activeAnswer.element) ?? activeAnswer.element)
+        : adapter.getConversationContainer(),
     );
     sectionTracker.setSections(sections);
     render();
@@ -416,6 +418,7 @@ export function startSectionNav(ctx: PluginContext): () => void {
 
       if (mutation.messagesChanged) {
         answerTracker.refreshMessages();
+        updateActiveSections();
 
         if (answerTracker.getActiveAnswer() === null) {
           positionManager.setTarget(adapter.getConversationContainer());
@@ -437,9 +440,7 @@ export function startSectionNav(ctx: PluginContext): () => void {
     onActiveAnswerChange(nextActiveAnswer) {
       activeAnswer = nextActiveAnswer;
       conversationWatcher.setActiveAnswer(activeAnswer?.element ?? null);
-      sections = activeAnswer
-        ? parseSections(activeAnswer.element, adapter, activeAnswer.index)
-        : [];
+      sections = parseAllSections();
       cacheBookmarkTargets(sections);
       positionManager.setTarget(
         activeAnswer

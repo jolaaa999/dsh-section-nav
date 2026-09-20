@@ -16,6 +16,11 @@ interface SectionRailProps {
   t: Translate;
 }
 
+interface SectionGroup {
+  key: string;
+  sections: Section[];
+}
+
 export function SectionRail({
   activeSectionId,
   bookmarkedSectionKeys,
@@ -31,6 +36,21 @@ export function SectionRail({
   if (position.mode === "hidden") {
     return null;
   }
+
+  const groups: SectionGroup[] = [];
+  for (const section of sections) {
+    const last = groups.at(-1);
+    if (last !== undefined && last.key === section.answerKey) {
+      last.sections.push(section);
+    } else {
+      groups.push({ key: section.answerKey, sections: [section] });
+    }
+  }
+
+  const currentGroupKey = activeSectionId !== null
+    ? sections.find((section) => section.id === activeSectionId)?.answerKey ?? groups.at(-1)?.key
+    : groups.at(-1)?.key;
+  let historyIndex = 0;
 
   return (
     <nav
@@ -58,17 +78,31 @@ export function SectionRail({
         <div className="section-rail-empty">{t("emptySections")}</div>
       ) : (
         <ol className="section-rail-list">
-          {sections.map((section) => (
-            <SectionRailItem
-              active={section.id === activeSectionId}
-              bookmarked={bookmarkedSectionKeys.has(section.key)}
-              key={section.id}
-              onSelect={onSectionSelect}
-              onToggleBookmark={onToggleBookmark}
-              section={section}
-              t={t}
-            />
-          ))}
+          {groups.map((group) => {
+            const isCurrent = group.key === currentGroupKey;
+            if (!isCurrent) historyIndex += 1;
+
+            return (
+              <li className="section-rail-group" key={group.key}>
+                <div className="section-rail-group-label">
+                  {isCurrent ? t("currentAnswer") : t("historyAnswer", { index: historyIndex })}
+                </div>
+                <ol className="section-rail-group-list">
+                  {group.sections.map((section) => (
+                    <SectionRailItem
+                      active={section.id === activeSectionId}
+                      bookmarked={bookmarkedSectionKeys.has(section.key)}
+                      key={section.id}
+                      onSelect={onSectionSelect}
+                      onToggleBookmark={onToggleBookmark}
+                      section={section}
+                      t={t}
+                    />
+                  ))}
+                </ol>
+              </li>
+            );
+          })}
         </ol>
       )}
     </nav>

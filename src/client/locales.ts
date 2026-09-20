@@ -9,6 +9,8 @@ export type Translate = (key: string, params?: Record<string, string | number>) 
 /** Chinese copy, matching the original Section Nav wording. */
 export const zh: Record<string, string> = {
   sections: '目录',
+  currentAnswer: '当前回答',
+  historyAnswer: '历史回答 {index}',
   bookmarkOpen: '打开书签列表，共 {count} 项',
   bookmarkTitle: '书签（{count}）',
   emptySections: '当前回答没有 # / ## / ### 标题，无法生成目录',
@@ -31,6 +33,8 @@ export const zh: Record<string, string> = {
 /** English copy, matching the original Section Nav wording. */
 export const en: Record<string, string> = {
   sections: 'Sections',
+  currentAnswer: 'Current answer',
+  historyAnswer: 'History answer {index}',
   bookmarkOpen: 'Open bookmarks, {count} total',
   bookmarkTitle: 'Bookmarks ({count})',
   emptySections: 'No # / ## / ### headings in this answer',
