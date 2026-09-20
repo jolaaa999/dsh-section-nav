@@ -20,6 +20,17 @@ function getIntersectionHeight(rect: DOMRect, top: number, bottom: number): numb
   return Math.max(0, Math.min(rect.bottom, bottom) - Math.max(rect.top, top));
 }
 
+function getDistanceFromReadingLine(rect: DOMRect, viewportHeight: number): number {
+  const readingLine = viewportHeight * READING_LINE_RATIO;
+  if (rect.bottom < readingLine) {
+    return readingLine - rect.bottom;
+  }
+  if (rect.top > readingLine) {
+    return rect.top - readingLine;
+  }
+  return 0;
+}
+
 function getAnswerScore(rect: DOMRect, viewportHeight: number): number {
   const bandTop = viewportHeight * READING_BAND_TOP_RATIO;
   const bandBottom = viewportHeight * READING_BAND_BOTTOM_RATIO;
@@ -158,9 +169,20 @@ export class AnswerTracker {
     const bestCandidate = candidates.reduce((best, candidate) =>
       candidate.score > best.score ? candidate : best,
     );
+    const nearestCandidate = candidates.reduce((nearest, candidate) => {
+      const distance = getDistanceFromReadingLine(candidate.element.getBoundingClientRect(), viewportHeight);
+      const nearestDistance = getDistanceFromReadingLine(nearest.element.getBoundingClientRect(), viewportHeight);
+      return distance < nearestDistance ? candidate : nearest;
+    });
+    // When no heading-bearing answer intersects the reading band, keep the
+    // nearest one as the rail's subject. In DSH a new turn streams as many
+    // reasoning rows before its final answer; without this fallback the rail
+    // would disappear for the whole stream even though the previous answer is
+    // still the most useful section source.
+    const targetCandidate = bestCandidate.score > 0 ? bestCandidate : nearestCandidate;
 
     if (!this.activeAnswer) {
-      this.setActiveAnswer(bestCandidate.score > 0 ? bestCandidate : null);
+      this.setActiveAnswer(targetCandidate);
       return;
     }
 
@@ -169,20 +191,20 @@ export class AnswerTracker {
     );
 
     if (!currentCandidate) {
-      this.setActiveAnswer(bestCandidate.score > 0 ? bestCandidate : null);
+      this.setActiveAnswer(targetCandidate);
       return;
     }
 
-    if (bestCandidate.element === currentCandidate.element) {
+    if (targetCandidate.element === currentCandidate.element) {
       this.activeAnswer = currentCandidate;
       return;
     }
 
     const currentHasLeftReadingBand = currentCandidate.score === 0;
-    const candidateClearlyWins = bestCandidate.score > currentCandidate.score + SWITCH_THRESHOLD;
+    const candidateClearlyWins = targetCandidate.score > currentCandidate.score + SWITCH_THRESHOLD;
 
-    if (bestCandidate.score > 0 && (currentHasLeftReadingBand || candidateClearlyWins)) {
-      this.setActiveAnswer(bestCandidate);
+    if (targetCandidate.score > 0 && (currentHasLeftReadingBand || candidateClearlyWins)) {
+      this.setActiveAnswer(targetCandidate);
     }
   }
 

@@ -28,7 +28,7 @@ export interface DshAdapter {
   getConversationKey(): string
   /** Scrollable chat flow container, or a document fallback. */
   getConversationContainer(): HTMLElement | null
-  /** Visible assistant answer rows, in transcript order. */
+  /** Visible assistant answer rows that contain section headings, in transcript order. */
   getAssistantMessages(): HTMLElement[]
   /** Find an assistant answer by the stable key stored in a bookmark. */
   getMessageById(messageId: string): HTMLElement | null
@@ -74,6 +74,15 @@ function queryAttribute(attribute: string, value: string): HTMLElement | null {
   return document.querySelector<HTMLElement>(`[${attribute}="${CSS.escape(value)}"]`)
 }
 
+function headingsOf(message: HTMLElement): HTMLHeadingElement[] {
+  return Array.from(message.querySelectorAll<HTMLHeadingElement>(SELECTORS.heading))
+    .filter((heading) => heading.closest(SELECTORS.thought) === null)
+}
+
+function hasSectionHeadings(message: HTMLElement): boolean {
+  return headingsOf(message).length > 0
+}
+
 /**
  * Create the adapter used by the trackers, parser, and bookmark recovery.
  * @param options - selected Session reader supplied by the plugin entry.
@@ -100,7 +109,7 @@ export function createDshAdapter(options: DshAdapterOptions = {}): DshAdapter {
       const container = this.getConversationContainer() ?? document
       return uniqueElements(
         Array.from(container.querySelectorAll<HTMLElement>(SELECTORS.assistantRow))
-          .filter((element) => !element.hasAttribute('hidden')),
+          .filter((element) => !element.hasAttribute('hidden') && hasSectionHeadings(element)),
       )
     },
 
@@ -114,7 +123,7 @@ export function createDshAdapter(options: DshAdapterOptions = {}): DshAdapter {
       const rows = Array.from(
         document.querySelectorAll<HTMLElement>(`[${ATTRIBUTES.turn}="${String(turnIndex)}"]`),
       ).filter((row) => row.getAttribute(ATTRIBUTES.flowKind) === 'assistant-step')
-      return rows.at(-1) ?? null
+      return rows.filter(hasSectionHeadings).at(-1) ?? rows.at(-1) ?? null
     },
 
     getMessageId(message) {
@@ -128,8 +137,7 @@ export function createDshAdapter(options: DshAdapterOptions = {}): DshAdapter {
     },
 
     getHeadings(message) {
-      return Array.from(message.querySelectorAll<HTMLHeadingElement>(SELECTORS.heading))
-        .filter((heading) => heading.closest(SELECTORS.thought) === null)
+      return headingsOf(message)
     },
 
     getTurnIndex(message) {
