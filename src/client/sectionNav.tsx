@@ -13,6 +13,7 @@ import { ConversationWatcher } from "../core/conversationWatcher";
 import { HIDDEN_RAIL_POSITION, PositionManager, type RailPosition } from "../core/positionManager";
 import { navigateToSection } from "../core/sectionNavigation";
 import { parseTurnSections } from "../core/turnParser";
+import { normalizeText } from "../core/text";
 import { SectionTracker } from "../core/sectionTracker";
 import { App } from "./components/App";
 import { getOrCreateExtensionRoot } from "./extensionRoot";
@@ -22,6 +23,8 @@ import { extensionCss } from "./styles";
 import { ThemeManager } from "./themeManager";
 
 const INITIAL_REFRESH_DELAYS = [100, 400, 1000, 2000, 3500] as const;
+const MAX_HISTORY_PAGES = 100;
+const LOAD_EARLIER_LABELS = new Set(["加载更早", "加载更多", "Load earlier", "Load more"]);
 
 function sectionsEqual(first: Section[], second: Section[]): boolean {
   return (
@@ -99,6 +102,7 @@ export function startSectionNav(ctx: PluginContext): () => void {
   let railPosition: RailPosition = HIDDEN_RAIL_POSITION;
   let resolvingBookmarkIds = new Set<string>();
   let sections: Section[] = [];
+  let historyLoadGeneration = 0;
   let t: Translate = fallbackTranslate;
   let unsubscribeLocale: () => void = () => {};
   let disposeLocale: () => void = () => {};
@@ -386,6 +390,82 @@ export function startSectionNav(ctx: PluginContext): () => void {
   const parseAllSections = (): Section[] =>
     parseTurnSections(conversationKey, adapter);
 
+  const historyProgressSnapshot = (): string => {
+    const rows = document.querySelectorAll<HTMLElement>("[data-chat-flow-kind]");
+    const first = rows[0];
+    const last = rows[rows.length - 1];
+    const identity = (element: HTMLElement | undefined): string =>
+      element?.getAttribute("data-chat-anchor-key")
+      ?? element?.getAttribute("data-chat-flow-key")
+      ?? "";
+
+    return `${rows.length}|${identity(first)}|${identity(last)}`;
+  };
+
+  const findLoadEarlierControl = (): HTMLElement | null => {
+    for (const element of document.querySelectorAll<HTMLElement>("button, [role=\"button\"], a")) {
+      if (LOAD_EARLIER_LABELS.has(normalizeText(element.textContent ?? ""))) {
+        return element;
+      }
+    }
+
+    return null;
+  };
+
+  const waitForHistoryProgress = (before: string, timeoutMs: number): Promise<boolean> =>
+    new Promise((resolve) => {
+      const startedAt = performance.now();
+      const tick = () => {
+        if (destroyed) {
+          resolve(false);
+          return;
+        }
+
+        if (historyProgressSnapshot() !== before) {
+          resolve(true);
+          return;
+        }
+
+        if (performance.now() - startedAt > timeoutMs) {
+          resolve(false);
+          return;
+        }
+
+        window.setTimeout(tick, 120);
+      };
+
+      tick();
+    });
+
+  const loadAllHistory = async (): Promise<void> => {
+    const generation = ++historyLoadGeneration;
+
+    for (let page = 0; page < MAX_HISTORY_PAGES; page += 1) {
+      if (destroyed || generation !== historyLoadGeneration) {
+        return;
+      }
+
+      const control = findLoadEarlierControl();
+
+      if (control === null) {
+        return;
+      }
+
+      const before = historyProgressSnapshot();
+      control.click();
+
+      if (!(await waitForHistoryProgress(before, 8000))) {
+        return;
+      }
+
+      if (destroyed || generation !== historyLoadGeneration) {
+        return;
+      }
+
+      updateActiveSections();
+    }
+  };
+
   const updateActiveSections = () => {
     const nextSections = parseAllSections();
 
@@ -479,6 +559,7 @@ export function startSectionNav(ctx: PluginContext): () => void {
   };
 
   const resetForConversation = (nextConversationKey: string) => {
+    historyLoadGeneration += 1;
     conversationVersion += 1;
     conversationKey = nextConversationKey;
     activeAnswer = null;
@@ -499,6 +580,7 @@ export function startSectionNav(ctx: PluginContext): () => void {
     render();
     void loadBookmarks(conversationKey, conversationVersion);
     scheduleMessageRefreshes();
+    window.setTimeout(() => { void loadAllHistory(); }, 800);
   };
 
   routeWatcher = new ConversationRouteWatcher(adapter, {
@@ -570,6 +652,7 @@ export function startSectionNav(ctx: PluginContext): () => void {
   routeWatcher.start();
   positionManager.setTarget(adapter.getConversationContainer());
   updateActiveSections();
+  window.setTimeout(() => { void loadAllHistory(); }, 800);
   watchdogTimerId = window.setInterval(() => {
     if (destroyed || routeWatcher.sync()) {
       return;
@@ -603,6 +686,7 @@ export function startSectionNav(ctx: PluginContext): () => void {
     }
 
     destroyed = true;
+    historyLoadGeneration += 1;
     clearRefreshTimers();
     if (watchdogTimerId !== null) {
       window.clearInterval(watchdogTimerId);
