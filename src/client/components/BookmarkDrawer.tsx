@@ -28,7 +28,7 @@ export function BookmarkDrawer({
       className="bookmark-drawer"
       id="section-nav-bookmark-drawer"
       role="dialog"
-      style={{ left: `${left}px` }}
+      style={{ left: `${left}px`, pointerEvents: "auto" }}
     >
       <header className="bookmark-drawer-header">
         <div>

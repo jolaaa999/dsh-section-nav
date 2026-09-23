@@ -29,6 +29,8 @@ export interface DshAdapter {
   getConversationKey(): string
   /** Scrollable chat flow container, or a document fallback. */
   getConversationContainer(): HTMLElement | null
+  /** Wider conversation scrollport whose size/position follows layout changes. */
+  getLayoutContainer(): HTMLElement | null
   /** Visible assistant answer rows that contain section headings, in transcript order. */
   getAssistantMessages(): HTMLElement[]
   /** Visible user messages, in transcript order. */
@@ -106,6 +108,11 @@ export function createDshAdapter(options: DshAdapterOptions = {}): DshAdapter {
       return candidates.find((candidate) => candidate.querySelector(SELECTORS.assistantRow) !== null)
         ?? candidates[0]
         ?? null
+    },
+
+    getLayoutContainer() {
+      return document.querySelector<HTMLElement>("[data-conversation-scroll]")
+        ?? this.getConversationContainer()
     },
 
     getAssistantMessages() {

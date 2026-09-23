@@ -16,13 +16,21 @@ interface ModeConfiguration {
   width: number;
 }
 
-const NATIVE_TOC_SAFE_AREA = 88;
+/** Space kept between the rail and the viewport's right edge. */
+const VIEWPORT_SAFE_AREA = 24;
+/** Clearance past the target's right edge for DSH's transcript width handle. */
+const WIDTH_HANDLE_CLEARANCE = 42;
 const FULL_BREAKPOINT = 1400;
 const COMPACT_BREAKPOINT = 1200;
 
-const FULL_MODE: ModeConfiguration = { gap: 26, mode: "full", width: 172 };
-const COMPACT_MODE: ModeConfiguration = { gap: 18, mode: "compact", width: 136 };
-const MINI_MODE: ModeConfiguration = { gap: 12, mode: "mini", width: 38 };
+/**
+ * Gaps clear the right transcript width handle: its strip starts 24px past the
+ * message column and is up to 10px wide, so the rail must start at least 34px
+ * past the column, plus breathing room.
+ */
+const FULL_MODE: ModeConfiguration = { gap: 56, mode: "full", width: 172 };
+const COMPACT_MODE: ModeConfiguration = { gap: 48, mode: "compact", width: 136 };
+const MINI_MODE: ModeConfiguration = { gap: 42, mode: "mini", width: 38 };
 
 export const HIDDEN_RAIL_POSITION: RailPosition = {
   left: 0,
@@ -40,11 +48,11 @@ function positionsEqual(first: RailPosition, second: RailPosition): boolean {
 
 function getPreferredModes(viewportWidth: number): ModeConfiguration[] {
   if (viewportWidth >= FULL_BREAKPOINT) {
-    return [FULL_MODE, COMPACT_MODE];
+    return [FULL_MODE, COMPACT_MODE, MINI_MODE];
   }
 
   if (viewportWidth >= COMPACT_BREAKPOINT) {
-    return [COMPACT_MODE];
+    return [COMPACT_MODE, MINI_MODE];
   }
 
   return [MINI_MODE];
@@ -54,8 +62,10 @@ export class PositionManager {
   private animationFrameId: number | null = null;
   private currentPosition = HIDDEN_RAIL_POSITION;
   private resizeObserver: ResizeObserver | null = null;
+  private layoutObserver: ResizeObserver | null = null;
   private started = false;
   private target: HTMLElement | null = null;
+  private layoutTarget: HTMLElement | null = null;
 
   constructor(private readonly options: PositionManagerOptions) {}
 
@@ -67,8 +77,21 @@ export class PositionManager {
     this.started = true;
     document.addEventListener("transitionrun", this.handleLayoutChange, true);
     document.addEventListener("transitionend", this.handleLayoutChange, true);
+    document.addEventListener("pointerup", this.handleLayoutChange, true);
+    document.addEventListener("pointercancel", this.handleLayoutChange, true);
     window.addEventListener("resize", this.handleLayoutChange, { passive: true });
     this.resizeObserver = new ResizeObserver(this.handleLayoutChange);
+    this.layoutObserver = new ResizeObserver(this.handleLayoutChange);
+    this.scheduleUpdate();
+  }
+
+  /**
+   * Re-evaluate the rail position on the next animation frame.
+   *
+   * Callers use this after a layout gesture that can move or resize the target
+   * without necessarily resizing the observed element itself.
+   */
+  refresh(): void {
     this.scheduleUpdate();
   }
 
@@ -88,6 +111,27 @@ export class PositionManager {
     this.scheduleUpdate();
   }
 
+  /**
+   * Observe a wider conversation container so rail positioning also follows
+   * layout shifts that move the message column without changing its width.
+   * @param target - scrollport or chat container, or null to observe nothing.
+   */
+  setLayoutTarget(target: HTMLElement | null): void {
+    if (this.layoutTarget === target) {
+      this.scheduleUpdate();
+      return;
+    }
+
+    this.layoutObserver?.disconnect();
+    this.layoutTarget = target;
+
+    if (target) {
+      this.layoutObserver?.observe(target);
+    }
+
+    this.scheduleUpdate();
+  }
+
   destroy(): void {
     if (!this.started) {
       return;
@@ -96,10 +140,15 @@ export class PositionManager {
     this.started = false;
     document.removeEventListener("transitionrun", this.handleLayoutChange, true);
     document.removeEventListener("transitionend", this.handleLayoutChange, true);
+    document.removeEventListener("pointerup", this.handleLayoutChange, true);
+    document.removeEventListener("pointercancel", this.handleLayoutChange, true);
     window.removeEventListener("resize", this.handleLayoutChange);
     this.resizeObserver?.disconnect();
     this.resizeObserver = null;
+    this.layoutObserver?.disconnect();
+    this.layoutObserver = null;
     this.target = null;
+    this.layoutTarget = null;
 
     if (this.animationFrameId !== null) {
       window.cancelAnimationFrame(this.animationFrameId);
@@ -132,7 +181,7 @@ export class PositionManager {
 
     const viewportWidth = document.documentElement.clientWidth || window.innerWidth;
     const targetRect = this.target.getBoundingClientRect();
-    const maximumRight = viewportWidth - NATIVE_TOC_SAFE_AREA;
+    const maximumRight = viewportWidth - VIEWPORT_SAFE_AREA;
 
     for (const configuration of getPreferredModes(viewportWidth)) {
       const left = Math.round(targetRect.right + configuration.gap);
@@ -150,17 +199,24 @@ export class PositionManager {
     // DSH chat columns can run close to the viewport edge, leaving no room to
     // the right even for the mini rail. Keep the directory reachable by
     // anchoring a compact or mini rail to the viewport edge instead of
-    // disappearing entirely.
-    const fallback = viewportWidth >= 900 ? COMPACT_MODE : MINI_MODE;
-    const fallbackLeft = Math.max(8, Math.round(viewportWidth - fallback.width - 12));
+    // disappearing entirely. The edge position still stays clear of the
+    // transcript width handle.
+    const fallbackModes = viewportWidth >= 900 ? [COMPACT_MODE, MINI_MODE] : [MINI_MODE];
+    const handleSafeLeft = Math.round(targetRect.right + WIDTH_HANDLE_CLEARANCE);
+    const edgeRight = viewportWidth - 4;
 
-    if (fallbackLeft + fallback.width <= viewportWidth - 4) {
-      this.updatePosition({
-        left: fallbackLeft,
-        mode: fallback.mode,
-        width: fallback.width,
-      });
-      return;
+    for (const configuration of fallbackModes) {
+      const edgeLeft = Math.round(viewportWidth - configuration.width - 12);
+      const left = Math.max(edgeLeft, handleSafeLeft);
+
+      if (left >= handleSafeLeft && left + configuration.width <= edgeRight) {
+        this.updatePosition({
+          left,
+          mode: configuration.mode,
+          width: configuration.width,
+        });
+        return;
+      }
     }
 
     this.updatePosition(HIDDEN_RAIL_POSITION);

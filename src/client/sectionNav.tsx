@@ -380,6 +380,25 @@ export function startSectionNav(ctx: PluginContext): () => void {
     },
   });
 
+  /**
+   * Re-read the layout target and re-evaluate the rail anchor.
+   *
+   * The target can be an answer row whose size does not change while the
+   * conversation column moves, so this is called on mutations and by the
+   * watchdog rather than relying only on the target's ResizeObserver.
+   */
+  const refreshPosition = () => {
+    if (destroyed) {
+      return;
+    }
+
+    const targetElement = activeAnswer
+      ? (adapter.getMessageContent(activeAnswer.element) ?? activeAnswer.element)
+      : adapter.getConversationContainer();
+    positionManager.setLayoutTarget(adapter.getLayoutContainer());
+    positionManager.setTarget(targetElement);
+  };
+
   const sectionTracker = new SectionTracker({
     onActiveSectionChange(sectionId) {
       activeSectionId = sectionId;
@@ -469,17 +488,16 @@ export function startSectionNav(ctx: PluginContext): () => void {
   const updateActiveSections = () => {
     const nextSections = parseAllSections();
 
+    // Refresh even when the section list is unchanged: a width drag or a
+    // sidebar resize can move the target without changing its width.
+    refreshPosition();
+
     if (sectionsEqual(sections, nextSections)) {
       return;
     }
 
     sections = nextSections;
     cacheBookmarkTargets(sections);
-    positionManager.setTarget(
-      activeAnswer
-        ? (adapter.getMessageContent(activeAnswer.element) ?? activeAnswer.element)
-        : adapter.getConversationContainer(),
-    );
     sectionTracker.setSections(sections);
     render();
   };
@@ -498,10 +516,7 @@ export function startSectionNav(ctx: PluginContext): () => void {
       if (mutation.messagesChanged) {
         answerTracker.refreshMessages();
         updateActiveSections();
-
-        if (answerTracker.getActiveAnswer() === null) {
-          positionManager.setTarget(adapter.getConversationContainer());
-        }
+        refreshPosition();
 
         if (unresolvedBookmarkIds.size > 0) {
           unresolvedBookmarkIds = new Set();
@@ -521,11 +536,7 @@ export function startSectionNav(ctx: PluginContext): () => void {
       conversationWatcher.setActiveAnswer(activeAnswer?.element ?? null);
       sections = parseAllSections();
       cacheBookmarkTargets(sections);
-      positionManager.setTarget(
-        activeAnswer
-          ? (adapter.getMessageContent(activeAnswer.element) ?? activeAnswer.element)
-          : adapter.getConversationContainer(),
-      );
+      refreshPosition();
       sectionTracker.setSections(sections);
       render();
     },
@@ -575,7 +586,7 @@ export function startSectionNav(ctx: PluginContext): () => void {
     unresolvedBookmarkIds = new Set();
     conversationWatcher.setActiveAnswer(null);
     answerTracker.reset();
-    positionManager.setTarget(adapter.getConversationContainer());
+    refreshPosition();
     sectionTracker.setSections([]);
     render();
     void loadBookmarks(conversationKey, conversationVersion);
@@ -650,7 +661,7 @@ export function startSectionNav(ctx: PluginContext): () => void {
   conversationWatcher.start();
   answerTracker.start();
   routeWatcher.start();
-  positionManager.setTarget(adapter.getConversationContainer());
+  refreshPosition();
   updateActiveSections();
   window.setTimeout(() => { void loadAllHistory(); }, 800);
   watchdogTimerId = window.setInterval(() => {
@@ -661,10 +672,7 @@ export function startSectionNav(ctx: PluginContext): () => void {
     conversationWatcher.refreshContainer();
     answerTracker.refreshMessages();
     updateActiveSections();
-
-    if (answerTracker.getActiveAnswer() === null) {
-      positionManager.setTarget(adapter.getConversationContainer());
-    }
+    refreshPosition();
   }, 1000);
   document.addEventListener("click", handleDocumentClick);
   document.addEventListener("pointerdown", handleDocumentPointerDown, true);
