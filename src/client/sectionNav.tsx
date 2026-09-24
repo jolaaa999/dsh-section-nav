@@ -10,7 +10,7 @@ import { bookmarkMatchesSection, resolveBookmark } from "../core/bookmarkResolve
 import { bookmarkService } from "../core/bookmarkService";
 import { ConversationRouteWatcher } from "../core/conversationRouteWatcher";
 import { ConversationWatcher } from "../core/conversationWatcher";
-import { pinnedMiniPosition, PositionManager, type RailPosition } from "../core/positionManager";
+import { initialRailPosition, PositionManager, type RailPosition } from "../core/positionManager";
 import { navigateToSection, resolveSectionElement } from "../core/sectionNavigation";
 import { parseTurnSections } from "../core/turnParser";
 import { normalizeText } from "../core/text";
@@ -118,7 +118,7 @@ export function startSectionNav(ctx: PluginContext): () => void {
   let conversationVersion = 0;
   let destroyed = false;
   let drawerOpen = false;
-  let railPosition: RailPosition = pinnedMiniPosition(
+  let railPosition: RailPosition = initialRailPosition(
     document.documentElement.clientWidth || window.innerWidth,
   );
   let resolvingBookmarkIds = new Set<string>();
@@ -977,7 +977,7 @@ export function startSectionNav(ctx: PluginContext): () => void {
     bookmarkTargetCache.clear();
     bookmarkUpgradeIds.clear();
     drawerOpen = false;
-    railPosition = pinnedMiniPosition(
+    railPosition = initialRailPosition(
       document.documentElement.clientWidth || window.innerWidth,
     );
     resolvingBookmarkIds = new Set();

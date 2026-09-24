@@ -1,4 +1,4 @@
-export type RailMode = "full" | "compact" | "mini" | "hidden";
+export type RailMode = "full" | "compact" | "hidden";
 
 export interface RailPosition {
   left: number;
@@ -21,8 +21,8 @@ interface ModeConfiguration {
 const VIEWPORT_SAFE_AREA = 24;
 /** Clearance past the target's right edge for DSH's transcript width handle. */
 const WIDTH_HANDLE_CLEARANCE = 36;
-/** Fixed mini-rail width. */
-const MINI_WIDTH = 40;
+/** Distance kept from the viewport's right edge by an edge-pinned rail. */
+const EDGE_INSET = 10;
 
 /**
  * Gaps clear the right transcript width handle: its strip starts 24px past the
@@ -32,9 +32,8 @@ const MINI_WIDTH = 40;
  * Widths are ranges, not fixed widths: a wide window lets the full rail grow
  * into the free gutter instead of clipping every title at 172px.
  */
-const FULL_MODE: ModeConfiguration = { gap: 56, mode: "full", minWidth: 220, maxWidth: 420 };
-const COMPACT_MODE: ModeConfiguration = { gap: 48, mode: "compact", minWidth: 160, maxWidth: 300 };
-const MINI_MODE: ModeConfiguration = { gap: 42, mode: "mini", minWidth: MINI_WIDTH, maxWidth: MINI_WIDTH };
+const FULL_MODE: ModeConfiguration = { gap: 56, mode: "full", minWidth: 200, maxWidth: 420 };
+const COMPACT_MODE: ModeConfiguration = { gap: 44, mode: "compact", minWidth: 132, maxWidth: 300 };
 
 export const HIDDEN_RAIL_POSITION: RailPosition = {
   left: 0,
@@ -50,16 +49,26 @@ function positionsEqual(first: RailPosition, second: RailPosition): boolean {
   );
 }
 
-export function pinnedMiniPosition(viewportWidth: number): RailPosition {
+/**
+ * Narrowest rail pinned to the viewport's right edge.
+ *
+ * The rail never collapses into a marker strip, so a window too narrow for a
+ * gutter still shows titled entries at their minimum width, clamped to what
+ * the viewport can hold.
+ * @param viewportWidth - Layout viewport width in CSS pixels.
+ * @returns Edge-pinned compact rail position.
+ */
+export function initialRailPosition(viewportWidth: number): RailPosition {
+  const width = Math.min(COMPACT_MODE.maxWidth, viewportWidth - EDGE_INSET * 2);
   return {
-    left: Math.max(4, Math.round(viewportWidth - MINI_WIDTH - 10)),
-    mode: "mini",
-    width: MINI_WIDTH,
+    left: Math.max(EDGE_INSET, Math.round(viewportWidth - width - EDGE_INSET)),
+    mode: "compact",
+    width: Math.max(COMPACT_MODE.minWidth, width),
   };
 }
 
 function getPreferredModes(): readonly ModeConfiguration[] {
-  return [FULL_MODE, COMPACT_MODE, MINI_MODE];
+  return [FULL_MODE, COMPACT_MODE];
 }
 
 export class PositionManager {
@@ -182,9 +191,9 @@ export class PositionManager {
 
     if (!this.target?.isConnected) {
       // Always-visible policy: with no chat target (hero, unloaded session, or
-      // a container replacement in progress) keep a mini rail pinned to the
+      // a container replacement in progress) keep the rail pinned to the
       // viewport edge instead of disappearing.
-      this.updatePosition(pinnedMiniPosition(viewportWidth));
+      this.updatePosition(initialRailPosition(viewportWidth));
       return;
     }
 
@@ -207,14 +216,14 @@ export class PositionManager {
       return;
     }
 
-    // The ideal position is too narrow. Try a compact or mini rail pinned to
-    // the viewport edge, still clear of the transcript width handle when
-    // possible; only the final fallback may overlap the gutter.
+    // The gutter beside the column is too narrow. Pin the rail to the
+    // viewport's right edge instead of collapsing it, still clear of the
+    // transcript width handle when the viewport leaves room for that.
     const handleSafeLeft = Math.round(targetRect.right + WIDTH_HANDLE_CLEARANCE);
-    for (const configuration of [COMPACT_MODE, MINI_MODE]) {
-      const edgeLeft = Math.round(viewportWidth - configuration.maxWidth - 10);
+    for (const configuration of [COMPACT_MODE, FULL_MODE]) {
+      const edgeLeft = Math.round(viewportWidth - configuration.maxWidth - EDGE_INSET);
       const left = Math.max(edgeLeft, handleSafeLeft);
-      const available = viewportWidth - 4 - left;
+      const available = viewportWidth - EDGE_INSET - left;
       const width = Math.min(configuration.maxWidth, available);
 
       if (width >= configuration.minWidth) {
@@ -227,7 +236,9 @@ export class PositionManager {
       }
     }
 
-    this.updatePosition(pinnedMiniPosition(viewportWidth));
+    // Last resort on a very narrow window: keep titled entries at the minimum
+    // width rather than dropping to a marker strip.
+    this.updatePosition(initialRailPosition(viewportWidth));
   }
 
   private updatePosition(position: RailPosition): void {

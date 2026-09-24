@@ -12,7 +12,9 @@ A DeepSeek Harness plugin that brings the **Section Nav for ChatGPT** experience
 - **Reading-position tracking** — the active section follows the transcript reading line, with the same hysteresis behavior as the original extension.
 - **One-click section navigation** — clicking a heading scrolls to it and briefly highlights the target.
 - **Local chapter bookmarks** — bookmark any section, reopen the bookmark drawer, and jump back later.
-- **Always-visible rail** — full, compact, and mini modes follow the available space; when the ideal edge position does not fit, a mini rail stays pinned to the viewport edge instead of disappearing.
+- **Always-visible rail** — the rail never collapses into a marker strip: entries keep their titles, and the width follows the available gutter, narrowing as the window narrows.
+- **Two-part hover card** — hovering a rail entry shows the user's request on the main line and a two-line excerpt of that turn's final model answer beneath it, styled with the Host's tooltip tokens.
+- **Navigation that holds** — paging older history no longer drags the viewport away from the entry you just clicked; the rail restores your target once pagination settles.
 - **Full session history** — the plugin keeps pulling older history pages while the Host reports more, rebuilding the directory from the earliest loaded turn through the live tail.
 - **Fast Session switching** — each visited Session's directory is cached in memory, so switching back renders its entries immediately and skips another full history pass when the Host has no more pages.
 - **Theme following** — the rail reads the host page's computed text and surface colors, so it follows DSH light/dark themes.
@@ -62,7 +64,7 @@ Run that command from this repository's root. The package manifest declares `dsh
 ## Usage
 
 1. Open a DSH chat with an assistant answer containing `#`, `##`, or `###` headings.
-2. The rail is always visible: it uses full/compact text when there is room and a mini edge rail otherwise.
+2. The rail is always visible: entries show their titles, and the rail widens or narrows with the space beside the message column.
 3. Click a rail item to scroll to that heading.
 4. Click the star beside a rail item to bookmark it.
 5. Click the star/count button in the rail header to open the bookmark drawer.
@@ -100,7 +102,7 @@ localStorage['dshSectionNav.bookmarks.v1']
 ## Known limitations
 
 - Directory entries come from user turns; assistant heading parsing is not re-enabled in this version.
-- On a very narrow viewport the rail falls back to a mini edge rail, so entries remain visible as markers; widen the window for full titles.
+- On a very narrow viewport the rail narrows to its minimum width and pins to the viewport edge; titles stay visible but truncate earlier.
 - Full-history loading stops when the Host has no more pages to return; sessions with unavailable older history cannot be expanded beyond what the Host serves.
 - A bookmark whose answer is outside the currently loaded session window is marked unavailable until that history page loads.
 - Headings inside reasoning disclosures are ignored; sections belong to the assistant's answer text.
