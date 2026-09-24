@@ -135,6 +135,8 @@ export function startSectionNav(ctx: PluginContext): () => void {
   let disposeLocale: () => void = () => {};
   let unresolvedBookmarkIds = new Set<string>();
   let pendingNavigationSection: Section | null = null;
+  let pendingDomSignature: string | null = null;
+  let pendingDomSignatureTimerId: number | null = null;
   let answerTracker: AnswerTracker;
   let conversationWatcher: ConversationWatcher;
   let routeWatcher: ConversationRouteWatcher;
@@ -773,6 +775,17 @@ export function startSectionNav(ctx: PluginContext): () => void {
   };
 
   const updateActiveSections = () => {
+    if (pendingDomSignature !== null) {
+      if (historyProgressSnapshot() === pendingDomSignature) {
+        return;
+      }
+      pendingDomSignature = null;
+      if (pendingDomSignatureTimerId !== null) {
+        window.clearTimeout(pendingDomSignatureTimerId);
+        pendingDomSignatureTimerId = null;
+      }
+    }
+
     const domSections = parseAllSections();
     const nextSections = mergeSections(baseSections, domSections);
 
@@ -874,6 +887,7 @@ export function startSectionNav(ctx: PluginContext): () => void {
 
   const resetForConversation = (nextConversationKey: string) => {
     saveCurrentDirectory();
+    pendingDomSignature = historyProgressSnapshot();
     historyLoadGeneration += 1;
     conversationVersion += 1;
     conversationKey = nextConversationKey;
@@ -907,6 +921,15 @@ export function startSectionNav(ctx: PluginContext): () => void {
     if (!historyExhausted) {
       window.setTimeout(() => { void loadAllHistory(); }, 800);
     }
+
+    if (pendingDomSignatureTimerId !== null) {
+      window.clearTimeout(pendingDomSignatureTimerId);
+    }
+    pendingDomSignatureTimerId = window.setTimeout(() => {
+      pendingDomSignatureTimerId = null;
+      pendingDomSignature = null;
+      updateActiveSections();
+    }, 3000);
   };
 
   routeWatcher = new ConversationRouteWatcher(adapter, {
@@ -1012,6 +1035,10 @@ export function startSectionNav(ctx: PluginContext): () => void {
     }
 
     saveCurrentDirectory();
+    if (pendingDomSignatureTimerId !== null) {
+      window.clearTimeout(pendingDomSignatureTimerId);
+      pendingDomSignatureTimerId = null;
+    }
     destroyed = true;
     historyLoadGeneration += 1;
     clearRefreshTimers();
