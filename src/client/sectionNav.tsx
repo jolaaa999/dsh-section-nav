@@ -114,6 +114,7 @@ export function startSectionNav(ctx: PluginContext): () => void {
   let sections: Section[] = [];
   let historyLoadGeneration = 0;
   let historyLoadInFlight = false;
+  let historyLoadPausedUntil = 0;
   let t: Translate = fallbackTranslate;
   let unsubscribeLocale: () => void = () => {};
   let disposeLocale: () => void = () => {};
@@ -169,10 +170,15 @@ export function startSectionNav(ctx: PluginContext): () => void {
               return;
             }
 
+            // The background history pager prepends rows; pause it while the
+            // rail scrolls to the clicked item so the two cannot fight over
+            // the transcript scroll position.
+            historyLoadPausedUntil = performance.now() + 8000;
+            historyLoadGeneration += 1;
             drawerOpen = false;
             activeSectionId = section.id;
             render();
-            navigateToSection(section);
+            navigateToSection(section, adapter);
           }}
           onToggleBookmark={(section) => {
             if (!ensureCurrentConversation()) {
@@ -350,7 +356,9 @@ export function startSectionNav(ctx: PluginContext): () => void {
     drawerOpen = false;
     activeSectionId = targetSection.id;
     render();
-    navigateToSection(targetSection);
+    historyLoadPausedUntil = performance.now() + 8000;
+    historyLoadGeneration += 1;
+    navigateToSection(targetSection, adapter);
     void bookmarkService
       .updateLocator(operationKey, bookmark.id, targetSection)
       .then((nextBookmarks) => {
@@ -567,8 +575,13 @@ export function startSectionNav(ctx: PluginContext): () => void {
     }
   };
 
+  const historyLoadAllowed = (generation: number): boolean =>
+    !destroyed &&
+    generation === historyLoadGeneration &&
+    performance.now() >= historyLoadPausedUntil;
+
   const loadAllHistory = async (): Promise<void> => {
-    if (destroyed || historyLoadInFlight) {
+    if (destroyed || historyLoadInFlight || performance.now() < historyLoadPausedUntil) {
       return;
     }
 
@@ -577,7 +590,11 @@ export function startSectionNav(ctx: PluginContext): () => void {
 
     try {
       for (let page = 0; page < MAX_HISTORY_PAGES; page += 1) {
-        if (destroyed || generation !== historyLoadGeneration) {
+        if (
+          destroyed ||
+          generation !== historyLoadGeneration ||
+          performance.now() < historyLoadPausedUntil
+        ) {
           return;
         }
 
@@ -585,6 +602,9 @@ export function startSectionNav(ctx: PluginContext): () => void {
         if (control === null) {
           // The paging control may only mount once the transcript is at the
           // top; nudge it there and wait briefly before falling back.
+          if (!historyLoadAllowed(generation)) {
+            return;
+          }
           scrollConversationToTop();
           control = await waitForEnabledControl(1200);
         }
@@ -603,6 +623,10 @@ export function startSectionNav(ctx: PluginContext): () => void {
           if (control === null) {
             return;
           }
+        }
+
+        if (!historyLoadAllowed(generation)) {
+          return;
         }
 
         const before = historyProgressSnapshot();

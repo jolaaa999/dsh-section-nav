@@ -1,10 +1,28 @@
+import type { DshAdapter } from "./adapter";
 import type { Section } from "./types";
 
 const SCROLL_MARGIN_TOP = "96px";
 const HIGHLIGHT_DURATION_MS = 1200;
 
-export function navigateToSection(section: Section): void {
-  const { element } = section;
+function resolveSectionElement(section: Section, adapter: DshAdapter): HTMLElement | null {
+  if (section.messageId !== null) {
+    const current = adapter.getMessageById(section.messageId);
+    if (current !== null) return current;
+  }
+
+  if (section.turnIndex !== null) {
+    const current = adapter.getUserMessageByTurnIndex(section.turnIndex)
+      ?? adapter.getMessageByTurnIndex(section.turnIndex);
+    if (current !== null) return current;
+  }
+
+  return section.element.isConnected ? section.element : null;
+}
+
+export function navigateToSection(section: Section, adapter: DshAdapter): void {
+  const element = resolveSectionElement(section, adapter);
+  if (element === null) return;
+
   const previousScrollMarginTop = element.style.scrollMarginTop;
   const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
