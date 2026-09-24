@@ -4,6 +4,8 @@ export interface Section {
   answerFingerprint: string;
   answerIndex: number;
   answerKey: string;
+  /** 该轮用户消息对应的模型最终回答片段，供 rail 悬浮卡片的小字使用。 */
+  answerText?: string;
   depth: number;
   element: HTMLElement;
   kind?: "heading" | "turn";

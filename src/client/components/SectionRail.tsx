@@ -1,3 +1,5 @@
+import type { CSSProperties } from "react";
+
 import type { Section } from "../../core/types";
 import type { RailPosition } from "../../core/positionManager";
 import type { Translate } from "../locales";
@@ -73,7 +75,13 @@ export function SectionRail({
       aria-label={t("sections")}
       className={`section-rail is-${position.mode}`}
       data-mode={position.mode}
-      style={{ left: `${position.left}px`, width: `${position.width}px` }}
+      style={
+        {
+          "--section-rail-left": `${position.left}px`,
+          left: `${position.left}px`,
+          width: `${position.width}px`,
+        } as CSSProperties
+      }
     >
       <div className="section-rail-heading">
         <span className="section-rail-heading-text">{t("sections")}</span>

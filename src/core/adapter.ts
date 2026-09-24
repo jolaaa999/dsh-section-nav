@@ -41,6 +41,10 @@ export interface DshAdapter {
   getMessageByTurnIndex(turnIndex: number): HTMLElement | null
   /** Find a user/steering row by its numeric turn index. */
   getUserMessageByTurnIndex(turnIndex: number): HTMLElement | null
+  /** Assistant answer rows of one turn, in transcript order. */
+  getAssistantMessagesByTurnIndex(turnIndex: number): HTMLElement[]
+  /** Reasoning disclosures inside one row, which never carry answer prose. */
+  getReasoningElements(row: HTMLElement): HTMLElement[]
   /** Stable identity of one assistant answer. */
   getMessageId(message: HTMLElement): string | null
   /** The element whose bounds anchor the rail. */
@@ -154,6 +158,16 @@ export function createDshAdapter(options: DshAdapterOptions = {}): DshAdapter {
         return kind === 'user' || kind === 'steering'
       })
       return rows.at(-1) ?? null
+    },
+
+    getAssistantMessagesByTurnIndex(turnIndex) {
+      return Array.from(
+        document.querySelectorAll<HTMLElement>(`[${ATTRIBUTES.turn}="${String(turnIndex)}"]`),
+      ).filter((row) => row.getAttribute(ATTRIBUTES.flowKind) === 'assistant-step')
+    },
+
+    getReasoningElements(row) {
+      return Array.from(row.querySelectorAll<HTMLElement>(SELECTORS.thought))
     },
 
     getMessageId(message) {

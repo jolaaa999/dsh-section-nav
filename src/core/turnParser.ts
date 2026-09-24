@@ -27,6 +27,48 @@ function userMessageText(message: HTMLElement): string {
 }
 
 /**
+ * Read the turn's final model answer.
+ *
+ * One turn holds several assistant-step rows because a reply streams in as
+ * separate steps, so the last row with body text is what the reader saw.
+ * Reasoning disclosures are dropped: without that, the excerpt would open on
+ * the thinking preamble instead of the answer itself.
+ * @param adapter - DSH DOM adapter.
+ * @param turnIndex - turn owning the user message, or null when unnumbered.
+ * @returns normalized answer text, or an empty string before the turn replies.
+ */
+function finalAnswerText(adapter: DshAdapter, turnIndex: number | null): string {
+  if (turnIndex === null) {
+    return ''
+  }
+
+  const rows = adapter.getAssistantMessagesByTurnIndex(turnIndex)
+
+  for (let index = rows.length - 1; index >= 0; index -= 1) {
+    const row = rows[index]
+
+    if (row === undefined || row.hasAttribute('hidden')) {
+      continue
+    }
+
+    const source = row.querySelector<HTMLElement>('[class*="markdown"]') ?? row
+    const clone = source.cloneNode(true) as HTMLElement
+
+    for (const thought of adapter.getReasoningElements(clone)) {
+      thought.remove()
+    }
+
+    const answer = normalizeText(clone.textContent ?? '')
+
+    if (answer.length > 0) {
+      return answer
+    }
+  }
+
+  return ''
+}
+
+/**
  * Build one directory entry for a user message.
  * @param conversationKey - stable session conversation key.
  * @param message - user message row.
@@ -51,6 +93,7 @@ export function sectionFromUserMessage(
     answerFingerprint: hashText(text.slice(0, MESSAGE_FINGERPRINT_LENGTH)),
     answerIndex: index,
     answerKey: messageId === null ? `index:${index}` : `message:${messageId}`,
+    answerText: finalAnswerText(adapter, turnIndex),
     depth: 0,
     element: message,
     headingPath: `turn:${index}`,
