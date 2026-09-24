@@ -14,6 +14,7 @@ A DeepSeek Harness plugin that brings the **Section Nav for ChatGPT** experience
 - **Local chapter bookmarks** — bookmark any section, reopen the bookmark drawer, and jump back later.
 - **Always-visible rail** — full, compact, and mini modes follow the available space; when the ideal edge position does not fit, a mini rail stays pinned to the viewport edge instead of disappearing.
 - **Full session history** — the plugin keeps pulling older history pages while the Host reports more, rebuilding the directory from the earliest loaded turn through the live tail.
+- **Fast Session switching** — each visited Session's directory is cached in memory, so switching back renders its entries immediately and skips another full history pass when the Host has no more pages.
 - **Theme following** — the rail reads the host page's computed text and surface colors, so it follows DSH light/dark themes.
 - **Bilingual copy** — Chinese and English strings are registered through the DSH locale service.
 - **No server storage** — bookmarks live in `localStorage` under `dshSectionNav.bookmarks.v1`; nothing is uploaded.
