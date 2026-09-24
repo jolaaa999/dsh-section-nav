@@ -13,24 +13,28 @@ export interface PositionManagerOptions {
 interface ModeConfiguration {
   gap: number;
   mode: Exclude<RailMode, "hidden">;
-  width: number;
+  minWidth: number;
+  maxWidth: number;
 }
 
 /** Space kept between the rail and the viewport's right edge. */
 const VIEWPORT_SAFE_AREA = 24;
 /** Clearance past the target's right edge for DSH's transcript width handle. */
-const WIDTH_HANDLE_CLEARANCE = 42;
-const FULL_BREAKPOINT = 1400;
-const COMPACT_BREAKPOINT = 1200;
+const WIDTH_HANDLE_CLEARANCE = 36;
+/** Fixed mini-rail width. */
+const MINI_WIDTH = 40;
 
 /**
  * Gaps clear the right transcript width handle: its strip starts 24px past the
  * message column and is up to 10px wide, so the rail must start at least 34px
  * past the column, plus breathing room.
+ *
+ * Widths are ranges, not fixed widths: a wide window lets the full rail grow
+ * into the free gutter instead of clipping every title at 172px.
  */
-const FULL_MODE: ModeConfiguration = { gap: 56, mode: "full", width: 172 };
-const COMPACT_MODE: ModeConfiguration = { gap: 48, mode: "compact", width: 136 };
-const MINI_MODE: ModeConfiguration = { gap: 42, mode: "mini", width: 38 };
+const FULL_MODE: ModeConfiguration = { gap: 56, mode: "full", minWidth: 220, maxWidth: 420 };
+const COMPACT_MODE: ModeConfiguration = { gap: 48, mode: "compact", minWidth: 160, maxWidth: 300 };
+const MINI_MODE: ModeConfiguration = { gap: 42, mode: "mini", minWidth: MINI_WIDTH, maxWidth: MINI_WIDTH };
 
 export const HIDDEN_RAIL_POSITION: RailPosition = {
   left: 0,
@@ -47,24 +51,15 @@ function positionsEqual(first: RailPosition, second: RailPosition): boolean {
 }
 
 export function pinnedMiniPosition(viewportWidth: number): RailPosition {
-  const width = MINI_MODE.width;
   return {
-    left: Math.max(4, Math.round(viewportWidth - width - 10)),
-    mode: MINI_MODE.mode,
-    width,
+    left: Math.max(4, Math.round(viewportWidth - MINI_WIDTH - 10)),
+    mode: "mini",
+    width: MINI_WIDTH,
   };
 }
 
-function getPreferredModes(viewportWidth: number): ModeConfiguration[] {
-  if (viewportWidth >= FULL_BREAKPOINT) {
-    return [FULL_MODE, COMPACT_MODE, MINI_MODE];
-  }
-
-  if (viewportWidth >= COMPACT_BREAKPOINT) {
-    return [COMPACT_MODE, MINI_MODE];
-  }
-
-  return [MINI_MODE];
+function getPreferredModes(): readonly ModeConfiguration[] {
+  return [FULL_MODE, COMPACT_MODE, MINI_MODE];
 }
 
 export class PositionManager {
@@ -192,40 +187,41 @@ export class PositionManager {
       this.updatePosition(pinnedMiniPosition(viewportWidth));
       return;
     }
+
     const targetRect = this.target.getBoundingClientRect();
     const maximumRight = viewportWidth - VIEWPORT_SAFE_AREA;
 
-    for (const configuration of getPreferredModes(viewportWidth)) {
+    for (const configuration of getPreferredModes()) {
       const left = Math.round(targetRect.right + configuration.gap);
+      const available = maximumRight - left;
 
-      if (left + configuration.width <= maximumRight) {
-        this.updatePosition({
-          left,
-          mode: configuration.mode,
-          width: configuration.width,
-        });
-        return;
+      if (available < configuration.minWidth) {
+        continue;
       }
+
+      this.updatePosition({
+        left,
+        mode: configuration.mode,
+        width: Math.min(configuration.maxWidth, Math.round(available)),
+      });
+      return;
     }
 
-    // DSH chat columns can run close to the viewport edge, leaving no room to
-    // the right even for the mini rail. Keep the directory reachable by
-    // anchoring a compact or mini rail to the viewport edge instead of
-    // disappearing entirely. The edge position still stays clear of the
-    // transcript width handle.
-    const fallbackModes = viewportWidth >= 900 ? [COMPACT_MODE, MINI_MODE] : [MINI_MODE];
+    // The ideal position is too narrow. Try a compact or mini rail pinned to
+    // the viewport edge, still clear of the transcript width handle when
+    // possible; only the final fallback may overlap the gutter.
     const handleSafeLeft = Math.round(targetRect.right + WIDTH_HANDLE_CLEARANCE);
-    const edgeRight = viewportWidth - 4;
-
-    for (const configuration of fallbackModes) {
-      const edgeLeft = Math.round(viewportWidth - configuration.width - 12);
+    for (const configuration of [COMPACT_MODE, MINI_MODE]) {
+      const edgeLeft = Math.round(viewportWidth - configuration.maxWidth - 10);
       const left = Math.max(edgeLeft, handleSafeLeft);
+      const available = viewportWidth - 4 - left;
+      const width = Math.min(configuration.maxWidth, available);
 
-      if (left >= handleSafeLeft && left + configuration.width <= edgeRight) {
+      if (width >= configuration.minWidth) {
         this.updatePosition({
           left,
           mode: configuration.mode,
-          width: configuration.width,
+          width,
         });
         return;
       }
