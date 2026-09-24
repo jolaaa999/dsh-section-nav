@@ -1,4 +1,4 @@
-import type { CSSProperties } from "react";
+import { useEffect, useRef, type CSSProperties } from "react";
 
 import type { Section } from "../../core/types";
 import type { RailPosition } from "../../core/positionManager";
@@ -35,6 +35,34 @@ export function SectionRail({
   sections,
   t,
 }: SectionRailProps) {
+  const listRef = useRef<HTMLOListElement>(null);
+  // Whether the list should keep following its newest entry. Starts true so a
+  // freshly opened session shows the latest turn, and turns false only once
+  // the reader scrolls up to read older ones.
+  const followTailRef = useRef(true);
+
+  // Directory entries run oldest to newest, so a list too tall for the rail
+  // pushes the newest turn below the fold — the one entry the reader is most
+  // likely to want.
+  const lastSectionId = sections.at(-1)?.id ?? null;
+  useEffect(() => {
+    const list = listRef.current;
+    if (list === null) return;
+
+    // Re-engage following when the reader returns to the tail.
+    const handleScroll = (): void => {
+      followTailRef.current = list.scrollHeight - list.scrollTop - list.clientHeight <= 24;
+    };
+    list.addEventListener("scroll", handleScroll, { passive: true });
+    return () => list.removeEventListener("scroll", handleScroll);
+  }, []);
+
+  useEffect(() => {
+    const list = listRef.current;
+    if (list === null || !followTailRef.current) return;
+    list.scrollTop = list.scrollHeight;
+  }, [lastSectionId, sections.length, position.mode, position.width, position.left]);
+
   if (position.mode === "hidden") {
     return null;
   }
@@ -101,11 +129,11 @@ export function SectionRail({
       {sections.length === 0 ? (
         <div className="section-rail-empty">{t("emptySections")}</div>
       ) : turnMode ? (
-        <ol className="section-rail-list">
+        <ol className="section-rail-list" ref={listRef}>
           {sections.map(renderItem)}
         </ol>
       ) : (
-        <ol className="section-rail-list">
+        <ol className="section-rail-list" ref={listRef}>
           {groups.map((group) => {
             const isCurrent = group.key === currentGroupKey;
             if (!isCurrent) historyIndex += 1;
