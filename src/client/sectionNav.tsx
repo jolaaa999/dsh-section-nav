@@ -130,6 +130,16 @@ export function startSectionNav(ctx: PluginContext): () => void {
   let historyLoadGeneration = 0;
   let historyLoadInFlight = false;
   let historyLoadPausedUntil = 0;
+  /**
+   * Turn the reader last navigated to, restored after history paging.
+   *
+   * Paging older history must scroll to the top to reach the "load earlier"
+   * control, which drags the viewport away from a jump the reader just made.
+   * A pause window cannot cover a long page-out, so the target is remembered
+   * and re-applied once paging settles.
+   */
+  let pendingScrollTargetTurn: number | null = null;
+  let pendingScrollTargetUntil = 0;
   let t: Translate = fallbackTranslate;
   let unsubscribeLocale: () => void = () => {};
   let disposeLocale: () => void = () => {};
@@ -205,8 +215,11 @@ export function startSectionNav(ctx: PluginContext): () => void {
 
             // The background history pager prepends rows; pause it while the
             // rail scrolls to the clicked item so the two cannot fight over
-            // the transcript scroll position.
+            // the transcript scroll position. The pause is only a head start:
+            // rememberScrollTarget is what actually keeps the viewport put
+            // when paging outlasts it.
             historyLoadPausedUntil = performance.now() + 8000;
+            rememberScrollTarget(section);
             historyLoadGeneration += 1;
             drawerOpen = false;
             activeSectionId = section.id;
@@ -394,6 +407,7 @@ export function startSectionNav(ctx: PluginContext): () => void {
     activeSectionId = targetSection.id;
     render();
     historyLoadPausedUntil = performance.now() + 8000;
+    rememberScrollTarget(targetSection);
     historyLoadGeneration += 1;
     navigateToSection(targetSection, adapter);
     void bookmarkService
@@ -688,6 +702,57 @@ export function startSectionNav(ctx: PluginContext): () => void {
     generation === historyLoadGeneration &&
     performance.now() >= historyLoadPausedUntil;
 
+  /** Remember a navigation so history paging can put the viewport back. */
+  const rememberScrollTarget = (section: Section): void => {
+    if (section.turnIndex === null) {
+      return;
+    }
+
+    pendingScrollTargetTurn = section.turnIndex;
+    pendingScrollTargetUntil = performance.now() + 60_000;
+  };
+
+  /**
+   * Return the viewport to the remembered navigation target.
+   *
+   * Paging inserts older content above the viewport, so writing scrollTop
+   * would be undone by the next insertion; re-resolving the row and scrolling
+   * to it is stable across those inserts.
+   * @returns Whether a target row was found and restored.
+   */
+  const restoreScrollTarget = (): boolean => {
+    const turnIndex = pendingScrollTargetTurn;
+
+    if (turnIndex === null) {
+      return false;
+    }
+
+    if (performance.now() > pendingScrollTargetUntil) {
+      pendingScrollTargetTurn = null;
+      return false;
+    }
+
+    const row = adapter.getUserMessageByTurnIndex(turnIndex);
+    const scroller = getConversationScroller();
+
+    if (row === null || !row.isConnected || scroller === null) {
+      return false;
+    }
+
+    const offset = row.getBoundingClientRect().top - scroller.getBoundingClientRect().top;
+
+    // Already aligned: leave the viewport alone so the reader's own scrolling
+    // is never fought.
+    if (Math.abs(offset) < 8) {
+      pendingScrollTargetTurn = null;
+      return true;
+    }
+
+    scroller.scrollTop += offset;
+    pendingScrollTargetTurn = null;
+    return true;
+  };
+
   const loadAllHistory = async (): Promise<void> => {
     if (
       destroyed ||
@@ -768,9 +833,15 @@ export function startSectionNav(ctx: PluginContext): () => void {
 
         updateActiveSections();
         await delay(80);
+        // Put the viewport back after every page: older rows were just
+        // inserted above it, which is what displaces the reader's target.
+        restoreScrollTarget();
       }
     } finally {
       historyLoadInFlight = false;
+      // Any exit path (page cap, failure, superseded generation) still owes
+      // the reader a final restore.
+      restoreScrollTarget();
     }
   };
 
@@ -805,6 +876,7 @@ export function startSectionNav(ctx: PluginContext): () => void {
       if (resolveSectionElement(pending, adapter) !== null) {
         pendingNavigationSection = null;
         historyLoadPausedUntil = performance.now() + 8000;
+        rememberScrollTarget(pending);
         historyLoadGeneration += 1;
         activeSectionId = pending.id;
         render();
