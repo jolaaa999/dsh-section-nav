@@ -39,7 +39,9 @@ function isBookmark(value: unknown): value is Bookmark {
 }
 
 function applySectionLocator(bookmark: Bookmark, section: Section): Bookmark {
-  const scrollAnchor = captureScrollAnchor(section.element);
+  const scrollAnchor = section.element.isConnected
+    ? captureScrollAnchor(section.element)
+    : {};
 
   return {
     ...bookmark,

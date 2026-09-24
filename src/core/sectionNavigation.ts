@@ -4,7 +4,7 @@ import type { Section } from "./types";
 const SCROLL_MARGIN_TOP = "96px";
 const HIGHLIGHT_DURATION_MS = 1200;
 
-function resolveSectionElement(section: Section, adapter: DshAdapter): HTMLElement | null {
+export function resolveSectionElement(section: Section, adapter: DshAdapter): HTMLElement | null {
   if (section.messageId !== null) {
     const current = adapter.getMessageById(section.messageId);
     if (current !== null) return current;

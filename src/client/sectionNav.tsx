@@ -11,7 +11,7 @@ import { bookmarkService } from "../core/bookmarkService";
 import { ConversationRouteWatcher } from "../core/conversationRouteWatcher";
 import { ConversationWatcher } from "../core/conversationWatcher";
 import { pinnedMiniPosition, PositionManager, type RailPosition } from "../core/positionManager";
-import { navigateToSection } from "../core/sectionNavigation";
+import { navigateToSection, resolveSectionElement } from "../core/sectionNavigation";
 import { parseTurnSections } from "../core/turnParser";
 import { normalizeText } from "../core/text";
 import { SectionTracker } from "../core/sectionTracker";
@@ -33,16 +33,27 @@ const LOAD_EARLIER_LABELS = new Set([
   "Load more",
   "Load older",
 ]);
+const DIRECTORY_CACHE_LIMIT = 24;
+
+interface DirectoryCacheEntry {
+  readonly sections: Section[];
+  readonly historyExhausted: boolean;
+  readonly updatedAt: number;
+}
+
+const directoryCache = new Map<string, DirectoryCacheEntry>();
 
 function sectionsEqual(first: Section[], second: Section[]): boolean {
   return (
     first.length === second.length &&
-    first.every(
-      (section, index) =>
-        section.id === second[index]?.id &&
-        section.element === second[index]?.element &&
-        section.text === second[index]?.text,
-    )
+    first.every((section, index) => {
+      const other = second[index];
+      return (
+        section.key === other?.key &&
+        section.index === other?.index &&
+        section.textHash === other?.textHash
+      );
+    })
   );
 }
 
@@ -111,7 +122,11 @@ export function startSectionNav(ctx: PluginContext): () => void {
     document.documentElement.clientWidth || window.innerWidth,
   );
   let resolvingBookmarkIds = new Set<string>();
-  let sections: Section[] = [];
+  const initialCachedDirectory = directoryCache.get(conversationKey);
+  let baseSections: Section[] = initialCachedDirectory?.sections ?? [];
+  let sections: Section[] = baseSections;
+  let historyExhausted = initialCachedDirectory?.historyExhausted ?? false;
+  let historyNoProgressAttempts = 0;
   let historyLoadGeneration = 0;
   let historyLoadInFlight = false;
   let historyLoadPausedUntil = 0;
@@ -119,6 +134,7 @@ export function startSectionNav(ctx: PluginContext): () => void {
   let unsubscribeLocale: () => void = () => {};
   let disposeLocale: () => void = () => {};
   let unresolvedBookmarkIds = new Set<string>();
+  let pendingNavigationSection: Section | null = null;
   let answerTracker: AnswerTracker;
   let conversationWatcher: ConversationWatcher;
   let routeWatcher: ConversationRouteWatcher;
@@ -170,6 +186,21 @@ export function startSectionNav(ctx: PluginContext): () => void {
               return;
             }
 
+            // A cached directory can contain entries from pages the current
+            // mounted window has not loaded yet. If the target row is absent,
+            // resume history paging and wait for it instead of doing nothing.
+            if (resolveSectionElement(section, adapter) === null) {
+              pendingNavigationSection = section;
+              historyExhausted = false;
+              historyNoProgressAttempts = 0;
+              historyLoadPausedUntil = 0;
+              historyLoadGeneration += 1;
+              void loadAllHistory();
+              return;
+            }
+
+            pendingNavigationSection = null;
+
             // The background history pager prepends rows; pause it while the
             // rail scrolls to the clicked item so the two cannot fight over
             // the transcript scroll position.
@@ -187,19 +218,23 @@ export function startSectionNav(ctx: PluginContext): () => void {
 
             const operationKey = conversationKey;
             const operationVersion = conversationVersion;
+            const currentElement = resolveSectionElement(section, adapter);
+            const bookmarkSection = currentElement === null
+              ? section
+              : { ...section, element: currentElement };
 
             void bookmarkService
-              .toggle(operationKey, section)
+              .toggle(operationKey, bookmarkSection)
               .then((nextBookmarks) => {
                 const savedBookmark = nextBookmarks.find(
-                  (bookmark) => bookmark.sectionKey === section.key,
+                  (bookmark) => bookmark.sectionKey === bookmarkSection.key,
                 );
 
                 if (savedBookmark) {
-                  bookmarkTargetCache.set(savedBookmark.id, section);
+                  bookmarkTargetCache.set(savedBookmark.id, bookmarkSection);
                 } else {
                   for (const [bookmarkId, target] of bookmarkTargetCache) {
-                    if (target.key === section.key) {
+                    if (target.key === bookmarkSection.key) {
                       bookmarkTargetCache.delete(bookmarkId);
                     }
                   }
@@ -428,6 +463,67 @@ export function startSectionNav(ctx: PluginContext): () => void {
   const parseAllSections = (): Section[] =>
     parseTurnSections(conversationKey, adapter);
 
+  const sectionIdentity = (section: Section): string =>
+    section.messageId !== null ? `id:${section.messageId}` : `key:${section.key}`;
+
+  /**
+   * Merge the current DOM window with the cached directory for this Session.
+   * DOM entries win because their element is live; cached entries remain for
+   * older pages that are not mounted yet.
+   */
+  const mergeSections = (
+    cached: readonly Section[],
+    dom: readonly Section[],
+  ): Section[] => {
+    if (cached.length === 0) return [...dom];
+
+    const map = new Map<string, Section>();
+    for (const section of cached) map.set(sectionIdentity(section), section);
+    for (const section of dom) map.set(sectionIdentity(section), section);
+
+    const merged = [...map.values()].sort((first, second) => {
+      const firstTurn = first.turnIndex ?? Number.MAX_SAFE_INTEGER;
+      const secondTurn = second.turnIndex ?? Number.MAX_SAFE_INTEGER;
+      if (firstTurn !== secondTurn) return firstTurn - secondTurn;
+      return first.index - second.index;
+    });
+
+    return merged.map((section, index) => ({
+      ...section,
+      index,
+      nextHeadingHash: merged[index + 1]?.textHash ?? null,
+      previousHeadingHash: merged[index - 1]?.textHash ?? null,
+    }));
+  };
+
+  const saveCurrentDirectory = (): void => {
+    if (conversationKey.length === 0 || sections.length === 0) {
+      return;
+    }
+
+    directoryCache.set(conversationKey, {
+      sections: sections.slice(),
+      historyExhausted,
+      updatedAt: Date.now(),
+    });
+
+    if (directoryCache.size <= DIRECTORY_CACHE_LIMIT) {
+      return;
+    }
+
+    let oldestKey: string | undefined;
+    let oldestAt = Number.POSITIVE_INFINITY;
+    for (const [key, entry] of directoryCache) {
+      if (entry.updatedAt < oldestAt) {
+        oldestAt = entry.updatedAt;
+        oldestKey = key;
+      }
+    }
+    if (oldestKey !== undefined) {
+      directoryCache.delete(oldestKey);
+    }
+  };
+
   const delay = (ms: number): Promise<void> =>
     new Promise((resolve) => {
       window.setTimeout(resolve, ms);
@@ -478,6 +574,16 @@ export function startSectionNav(ctx: PluginContext): () => void {
     }
 
     return partial;
+  };
+
+  const isHistoryLoading = (): boolean => {
+    for (const element of document.querySelectorAll<HTMLElement>("button, [role=\"button\"]")) {
+      const text = normalizeText(element.textContent ?? "");
+      if (/loading|加载中/i.test(text) && element.hasAttribute("disabled")) {
+        return true;
+      }
+    }
+    return false;
   };
 
   const waitForHistoryProgress = (before: string, timeoutMs: number): Promise<boolean> =>
@@ -581,7 +687,12 @@ export function startSectionNav(ctx: PluginContext): () => void {
     performance.now() >= historyLoadPausedUntil;
 
   const loadAllHistory = async (): Promise<void> => {
-    if (destroyed || historyLoadInFlight || performance.now() < historyLoadPausedUntil) {
+    if (
+      destroyed ||
+      historyExhausted ||
+      historyLoadInFlight ||
+      performance.now() < historyLoadPausedUntil
+    ) {
       return;
     }
 
@@ -610,10 +721,16 @@ export function startSectionNav(ctx: PluginContext): () => void {
         }
 
         if (control === null) {
-          const advanced = await loadOlderViaSession();
-          if (!advanced) {
+          if (isHistoryLoading()) {
             return;
           }
+          const advanced = await loadOlderViaSession();
+          if (!advanced) {
+            historyNoProgressAttempts += 1;
+            if (historyNoProgressAttempts >= 5) historyExhausted = true;
+            return;
+          }
+          historyNoProgressAttempts = 0;
           updateActiveSections();
           continue;
         }
@@ -632,11 +749,19 @@ export function startSectionNav(ctx: PluginContext): () => void {
         const before = historyProgressSnapshot();
         control.click();
 
-        if (!(await waitForHistoryProgress(before, 10000))) {
-          const advanced = await loadOlderViaSession();
-          if (!advanced) {
+        if (await waitForHistoryProgress(before, 10000)) {
+          historyNoProgressAttempts = 0;
+        } else {
+          if (isHistoryLoading()) {
             return;
           }
+          const advanced = await loadOlderViaSession();
+          if (!advanced) {
+            historyNoProgressAttempts += 1;
+            if (historyNoProgressAttempts >= 5) historyExhausted = true;
+            return;
+          }
+          historyNoProgressAttempts = 0;
         }
 
         updateActiveSections();
@@ -648,11 +773,31 @@ export function startSectionNav(ctx: PluginContext): () => void {
   };
 
   const updateActiveSections = () => {
-    const nextSections = parseAllSections();
+    const domSections = parseAllSections();
+    const nextSections = mergeSections(baseSections, domSections);
+
+    // Track active sections only from live DOM rows. Cached rows have no
+    // connected element and would otherwise poison the reading-line math.
+    sectionTracker.setSections(domSections);
 
     // Refresh even when the section list is unchanged: a width drag or a
     // sidebar resize can move the target without changing its width.
     refreshPosition();
+
+    // A cached-rail click may wait for an older page. Resolve it before the
+    // section-equality early return: the cached text and DOM text can compare
+    // equal even though the live element only just mounted.
+    if (pendingNavigationSection !== null) {
+      const pending = pendingNavigationSection;
+      if (resolveSectionElement(pending, adapter) !== null) {
+        pendingNavigationSection = null;
+        historyLoadPausedUntil = performance.now() + 8000;
+        historyLoadGeneration += 1;
+        activeSectionId = pending.id;
+        render();
+        navigateToSection(pending, adapter);
+      }
+    }
 
     if (sectionsEqual(sections, nextSections)) {
       return;
@@ -660,7 +805,6 @@ export function startSectionNav(ctx: PluginContext): () => void {
 
     sections = nextSections;
     cacheBookmarkTargets(sections);
-    sectionTracker.setSections(sections);
     render();
   };
 
@@ -697,11 +841,7 @@ export function startSectionNav(ctx: PluginContext): () => void {
     onActiveAnswerChange(nextActiveAnswer) {
       activeAnswer = nextActiveAnswer;
       conversationWatcher.setActiveAnswer(activeAnswer?.element ?? null);
-      sections = parseAllSections();
-      cacheBookmarkTargets(sections);
-      refreshPosition();
-      sectionTracker.setSections(sections);
-      render();
+      updateActiveSections();
     },
   });
 
@@ -733,9 +873,17 @@ export function startSectionNav(ctx: PluginContext): () => void {
   };
 
   const resetForConversation = (nextConversationKey: string) => {
+    saveCurrentDirectory();
     historyLoadGeneration += 1;
     conversationVersion += 1;
     conversationKey = nextConversationKey;
+
+    const cachedDirectory = directoryCache.get(nextConversationKey);
+    baseSections = cachedDirectory?.sections ?? [];
+    historyExhausted = cachedDirectory?.historyExhausted ?? false;
+    historyNoProgressAttempts = 0;
+    sections = baseSections;
+
     activeAnswer = null;
     activeSectionId = null;
     bookmarks = [];
@@ -747,8 +895,8 @@ export function startSectionNav(ctx: PluginContext): () => void {
       document.documentElement.clientWidth || window.innerWidth,
     );
     resolvingBookmarkIds = new Set();
-    sections = [];
     unresolvedBookmarkIds = new Set();
+    pendingNavigationSection = null;
     conversationWatcher.setActiveAnswer(null);
     answerTracker.reset();
     refreshPosition();
@@ -756,7 +904,9 @@ export function startSectionNav(ctx: PluginContext): () => void {
     render();
     void loadBookmarks(conversationKey, conversationVersion);
     scheduleMessageRefreshes();
-    window.setTimeout(() => { void loadAllHistory(); }, 800);
+    if (!historyExhausted) {
+      window.setTimeout(() => { void loadAllHistory(); }, 800);
+    }
   };
 
   routeWatcher = new ConversationRouteWatcher(adapter, {
@@ -828,7 +978,9 @@ export function startSectionNav(ctx: PluginContext): () => void {
   routeWatcher.start();
   refreshPosition();
   updateActiveSections();
-  window.setTimeout(() => { void loadAllHistory(); }, 800);
+  if (!historyExhausted) {
+    window.setTimeout(() => { void loadAllHistory(); }, 800);
+  }
   watchdogTimerId = window.setInterval(() => {
     if (destroyed || routeWatcher.sync()) {
       return;
@@ -859,6 +1011,7 @@ export function startSectionNav(ctx: PluginContext): () => void {
       return;
     }
 
+    saveCurrentDirectory();
     destroyed = true;
     historyLoadGeneration += 1;
     clearRefreshTimers();
