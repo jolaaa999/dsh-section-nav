@@ -46,6 +46,15 @@ function positionsEqual(first: RailPosition, second: RailPosition): boolean {
   );
 }
 
+export function pinnedMiniPosition(viewportWidth: number): RailPosition {
+  const width = MINI_MODE.width;
+  return {
+    left: Math.max(4, Math.round(viewportWidth - width - 10)),
+    mode: MINI_MODE.mode,
+    width,
+  };
+}
+
 function getPreferredModes(viewportWidth: number): ModeConfiguration[] {
   if (viewportWidth >= FULL_BREAKPOINT) {
     return [FULL_MODE, COMPACT_MODE, MINI_MODE];
@@ -174,12 +183,15 @@ export class PositionManager {
   }
 
   private evaluate(): void {
+    const viewportWidth = document.documentElement.clientWidth || window.innerWidth;
+
     if (!this.target?.isConnected) {
-      this.updatePosition(HIDDEN_RAIL_POSITION);
+      // Always-visible policy: with no chat target (hero, unloaded session, or
+      // a container replacement in progress) keep a mini rail pinned to the
+      // viewport edge instead of disappearing.
+      this.updatePosition(pinnedMiniPosition(viewportWidth));
       return;
     }
-
-    const viewportWidth = document.documentElement.clientWidth || window.innerWidth;
     const targetRect = this.target.getBoundingClientRect();
     const maximumRight = viewportWidth - VIEWPORT_SAFE_AREA;
 
@@ -219,7 +231,7 @@ export class PositionManager {
       }
     }
 
-    this.updatePosition(HIDDEN_RAIL_POSITION);
+    this.updatePosition(pinnedMiniPosition(viewportWidth));
   }
 
   private updatePosition(position: RailPosition): void {

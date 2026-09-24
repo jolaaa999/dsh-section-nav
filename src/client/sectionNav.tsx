@@ -10,7 +10,7 @@ import { bookmarkMatchesSection, resolveBookmark } from "../core/bookmarkResolve
 import { bookmarkService } from "../core/bookmarkService";
 import { ConversationRouteWatcher } from "../core/conversationRouteWatcher";
 import { ConversationWatcher } from "../core/conversationWatcher";
-import { HIDDEN_RAIL_POSITION, PositionManager, type RailPosition } from "../core/positionManager";
+import { pinnedMiniPosition, PositionManager, type RailPosition } from "../core/positionManager";
 import { navigateToSection } from "../core/sectionNavigation";
 import { parseTurnSections } from "../core/turnParser";
 import { normalizeText } from "../core/text";
@@ -24,7 +24,15 @@ import { ThemeManager } from "./themeManager";
 
 const INITIAL_REFRESH_DELAYS = [100, 400, 1000, 2000, 3500] as const;
 const MAX_HISTORY_PAGES = 100;
-const LOAD_EARLIER_LABELS = new Set(["加载更早", "加载更多", "Load earlier", "Load more"]);
+const LOAD_EARLIER_LABELS = new Set([
+  "加载更早",
+  "加载更多",
+  "加载更早的记录",
+  "加载历史消息",
+  "Load earlier",
+  "Load more",
+  "Load older",
+]);
 
 function sectionsEqual(first: Section[], second: Section[]): boolean {
   return (
@@ -99,10 +107,13 @@ export function startSectionNav(ctx: PluginContext): () => void {
   let conversationVersion = 0;
   let destroyed = false;
   let drawerOpen = false;
-  let railPosition: RailPosition = HIDDEN_RAIL_POSITION;
+  let railPosition: RailPosition = pinnedMiniPosition(
+    document.documentElement.clientWidth || window.innerWidth,
+  );
   let resolvingBookmarkIds = new Set<string>();
   let sections: Section[] = [];
   let historyLoadGeneration = 0;
+  let historyLoadInFlight = false;
   let t: Translate = fallbackTranslate;
   let unsubscribeLocale: () => void = () => {};
   let disposeLocale: () => void = () => {};
@@ -409,26 +420,56 @@ export function startSectionNav(ctx: PluginContext): () => void {
   const parseAllSections = (): Section[] =>
     parseTurnSections(conversationKey, adapter);
 
+  const delay = (ms: number): Promise<void> =>
+    new Promise((resolve) => {
+      window.setTimeout(resolve, ms);
+    });
+
+  const getConversationScroller = (): HTMLElement | null =>
+    document.querySelector<HTMLElement>("[data-conversation-scroll]");
+
+  const elementIdentity = (element: HTMLElement | undefined): string =>
+    element?.getAttribute("data-chat-anchor-key")
+    ?? element?.getAttribute("data-chat-flow-key")
+    ?? "";
+
   const historyProgressSnapshot = (): string => {
     const rows = document.querySelectorAll<HTMLElement>("[data-chat-flow-kind]");
     const first = rows[0];
-    const last = rows[rows.length - 1];
-    const identity = (element: HTMLElement | undefined): string =>
-      element?.getAttribute("data-chat-anchor-key")
-      ?? element?.getAttribute("data-chat-flow-key")
-      ?? "";
+    const identity = elementIdentity(first);
+    return identity.length > 0 ? identity : `count:${rows.length}`;
+  };
 
-    return `${rows.length}|${identity(first)}|${identity(last)}`;
+  const scrollConversationToTop = (): void => {
+    const scroller = getConversationScroller();
+    if (scroller !== null) {
+      scroller.scrollTop = 0;
+    }
   };
 
   const findLoadEarlierControl = (): HTMLElement | null => {
-    for (const element of document.querySelectorAll<HTMLElement>("button, [role=\"button\"], a")) {
-      if (LOAD_EARLIER_LABELS.has(normalizeText(element.textContent ?? ""))) {
+    const candidates = document.querySelectorAll<HTMLElement>(
+      "button, [role=\"button\"], a, [data-testid*=\"older\"], [data-testid*=\"earlier\"], [class*=\"loadOlder\"], [class*=\"load-older\"]",
+    );
+    const labels = [...LOAD_EARLIER_LABELS];
+    let partial: HTMLElement | null = null;
+
+    for (const element of candidates) {
+      const text = normalizeText(element.textContent ?? "");
+      const aria = normalizeText(element.getAttribute("aria-label") ?? "");
+      const accessible = `${text} ${aria}`.trim();
+      if (accessible.length === 0) {
+        continue;
+      }
+      if (labels.includes(text) || labels.includes(aria)) {
         return element;
+      }
+      if (partial === null && labels.some((label) => accessible.includes(label))) {
+        partial = element;
       }
     }
 
-    return null;
+    return partial;
   };
 
   const waitForHistoryProgress = (before: string, timeoutMs: number): Promise<boolean> =>
@@ -456,32 +497,129 @@ export function startSectionNav(ctx: PluginContext): () => void {
       tick();
     });
 
+  const waitForEnabledControl = async (timeoutMs: number): Promise<HTMLElement | null> => {
+    const startedAt = performance.now();
+    while (!destroyed && performance.now() - startedAt < timeoutMs) {
+      const control = findLoadEarlierControl();
+      if (control !== null && !control.hasAttribute("disabled")) {
+        return control;
+      }
+      await delay(120);
+    }
+    return null;
+  };
+
+  /**
+   * Pull one older history page through the session controller rather than the
+   * chat button. This is the fallback for embedded / virtualized transcripts
+   * that render no paging control in the DOM.
+   */
+  const loadOlderViaSession = async (): Promise<boolean> => {
+    const sessionId = currentSessionId(ctx);
+    if (sessionId === undefined) {
+      return false;
+    }
+
+    try {
+      const sessions = ctx.get("sessions") as
+        | {
+            binding?: (id: string) =>
+              | {
+                  session?: {
+                    loadOlder?: () => Promise<void>;
+                  };
+                }
+              | undefined;
+            scope?: (id: string) =>
+              | {
+                  conversation?: {
+                    loadOlder?: () => Promise<void>;
+                  };
+                }
+              | undefined;
+          }
+        | undefined;
+
+      const session = sessions?.binding?.(sessionId)?.session;
+      const conversation = sessions?.scope?.(sessionId)?.conversation;
+      const loadOlder = session?.loadOlder ?? conversation?.loadOlder;
+      if (loadOlder === undefined) {
+        return false;
+      }
+
+      const scroller = getConversationScroller();
+      const beforeTop = scroller?.scrollTop ?? 0;
+      const beforeHeight = scroller?.scrollHeight ?? 0;
+      const before = historyProgressSnapshot();
+      await loadOlder.call(session ?? conversation);
+      const progressed = await waitForHistoryProgress(before, 5000);
+
+      if (progressed && scroller !== null && scroller.scrollHeight > beforeHeight) {
+        const atBottom = beforeHeight - beforeTop - scroller.clientHeight < 60;
+        if (!atBottom) {
+          scroller.scrollTop = beforeTop + (scroller.scrollHeight - beforeHeight);
+        }
+      }
+
+      return progressed;
+    } catch {
+      return false;
+    }
+  };
+
   const loadAllHistory = async (): Promise<void> => {
+    if (destroyed || historyLoadInFlight) {
+      return;
+    }
+
+    historyLoadInFlight = true;
     const generation = ++historyLoadGeneration;
 
-    for (let page = 0; page < MAX_HISTORY_PAGES; page += 1) {
-      if (destroyed || generation !== historyLoadGeneration) {
-        return;
+    try {
+      for (let page = 0; page < MAX_HISTORY_PAGES; page += 1) {
+        if (destroyed || generation !== historyLoadGeneration) {
+          return;
+        }
+
+        let control = findLoadEarlierControl();
+        if (control === null) {
+          // The paging control may only mount once the transcript is at the
+          // top; nudge it there and wait briefly before falling back.
+          scrollConversationToTop();
+          control = await waitForEnabledControl(1200);
+        }
+
+        if (control === null) {
+          const advanced = await loadOlderViaSession();
+          if (!advanced) {
+            return;
+          }
+          updateActiveSections();
+          continue;
+        }
+
+        if (control.hasAttribute("disabled")) {
+          control = await waitForEnabledControl(4000);
+          if (control === null) {
+            return;
+          }
+        }
+
+        const before = historyProgressSnapshot();
+        control.click();
+
+        if (!(await waitForHistoryProgress(before, 10000))) {
+          const advanced = await loadOlderViaSession();
+          if (!advanced) {
+            return;
+          }
+        }
+
+        updateActiveSections();
+        await delay(80);
       }
-
-      const control = findLoadEarlierControl();
-
-      if (control === null) {
-        return;
-      }
-
-      const before = historyProgressSnapshot();
-      control.click();
-
-      if (!(await waitForHistoryProgress(before, 8000))) {
-        return;
-      }
-
-      if (destroyed || generation !== historyLoadGeneration) {
-        return;
-      }
-
-      updateActiveSections();
+    } finally {
+      historyLoadInFlight = false;
     }
   };
 
@@ -517,6 +655,7 @@ export function startSectionNav(ctx: PluginContext): () => void {
         answerTracker.refreshMessages();
         updateActiveSections();
         refreshPosition();
+        void loadAllHistory();
 
         if (unresolvedBookmarkIds.size > 0) {
           unresolvedBookmarkIds = new Set();
@@ -580,7 +719,9 @@ export function startSectionNav(ctx: PluginContext): () => void {
     bookmarkTargetCache.clear();
     bookmarkUpgradeIds.clear();
     drawerOpen = false;
-    railPosition = HIDDEN_RAIL_POSITION;
+    railPosition = pinnedMiniPosition(
+      document.documentElement.clientWidth || window.innerWidth,
+    );
     resolvingBookmarkIds = new Set();
     sections = [];
     unresolvedBookmarkIds = new Set();
@@ -673,6 +814,7 @@ export function startSectionNav(ctx: PluginContext): () => void {
     answerTracker.refreshMessages();
     updateActiveSections();
     refreshPosition();
+    void loadAllHistory();
   }, 1000);
   document.addEventListener("click", handleDocumentClick);
   document.addEventListener("pointerdown", handleDocumentPointerDown, true);
