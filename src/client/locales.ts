@@ -29,6 +29,9 @@ export const zh: Record<string, string> = {
   delete: '删除书签',
   messageMeta: '第 {index} 条消息',
   sectionMeta: 'H{level} · Section {index}',
+  loadEarlier: '加载更早的对话（{count} 轮）',
+  loadEarlierPending: '正在加载…',
+  loadEarlierDone: '没有更早的对话了',
 }
 
 /** English copy, matching the original Section Nav wording. */
@@ -54,6 +57,9 @@ export const en: Record<string, string> = {
   delete: 'Delete bookmark',
   messageMeta: 'Message {index}',
   sectionMeta: 'H{level} · Section {index}',
+  loadEarlier: 'Load {count} older turns',
+  loadEarlierPending: 'Loading…',
+  loadEarlierDone: 'No older turns left',
 }
 
 /** Minimal fallback used when the locale service is unavailable. */

@@ -9,10 +9,13 @@ interface AppProps {
   activeSectionId: string | null;
   bookmarks: Bookmark[];
   drawerOpen: boolean;
+  historyComplete: boolean;
+  historyLoading: boolean;
   onBookmarkDelete(bookmark: Bookmark): void;
   onBookmarkSelect(bookmark: Bookmark): void;
   onDrawerClose(): void;
   onDrawerToggle(): void;
+  onRailReachTop(): void;
   onSectionSelect(section: Section): void;
   onToggleBookmark(section: Section): void;
   position: RailPosition;
@@ -26,10 +29,13 @@ export function App({
   activeSectionId,
   bookmarks,
   drawerOpen,
+  historyComplete,
+  historyLoading,
   onBookmarkDelete,
   onBookmarkSelect,
   onDrawerClose,
   onDrawerToggle,
+  onRailReachTop,
   onSectionSelect,
   onToggleBookmark,
   position,
@@ -54,6 +60,9 @@ export function App({
         bookmarkedSectionKeys={bookmarkedSectionKeys}
         bookmarkCount={bookmarks.length}
         drawerOpen={drawerOpen}
+        historyComplete={historyComplete}
+        historyLoading={historyLoading}
+        onReachTop={onRailReachTop}
         onSectionSelect={onSectionSelect}
         onToggleBookmark={onToggleBookmark}
         onToggleDrawer={onDrawerToggle}

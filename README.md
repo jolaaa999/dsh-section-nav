@@ -15,8 +15,8 @@ A DeepSeek Harness plugin that brings the **Section Nav for ChatGPT** experience
 - **Always-visible rail** — the rail never collapses into a marker strip: entries keep their titles, and the width follows the available gutter, narrowing as the window narrows.
 - **Two-part hover card** — hovering a rail entry shows the user's request on the main line and a two-line excerpt of that turn's final model answer beneath it, styled with the Host's tooltip tokens.
 - **Navigation that holds** — paging older history no longer drags the viewport away from the entry you just clicked; the rail restores your target once pagination settles.
-- **Full session history** — the plugin keeps pulling older history pages while the Host reports more, rebuilding the directory from the earliest loaded turn through the live tail.
-- **Fast Session switching** — each visited Session's directory is cached in memory, so switching back renders its entries immediately and skips another full history pass when the Host has no more pages.
+- **Lazy history** — the rail opens with the newest 8 turns and shows a load control at the top of the list; click it, or keep scrolling up, to page in 8 older turns at a time. The control reports when no older turns remain.
+- **Fast Session switching** — each visited Session's directory is cached in memory, so switching back renders its entries immediately.
 - **Theme following** — the rail reads the host page's computed text and surface colors, so it follows DSH light/dark themes.
 - **Bilingual copy** — Chinese and English strings are registered through the DSH locale service.
 - **No server storage** — bookmarks live in `localStorage` under `dshSectionNav.bookmarks.v1`; nothing is uploaded.
@@ -69,6 +69,7 @@ Run that command from this repository's root. The package manifest declares `dsh
 4. Click the star beside a rail item to bookmark it.
 5. Click the star/count button in the rail header to open the bookmark drawer.
 6. Use `Escape`, a click outside, or the close button to close the drawer.
+7. The rail shows the newest 8 turns. Click the load control at the top of the list, or keep scrolling up there, to load 8 older turns at a time.
 
 ## Development
 
@@ -103,8 +104,8 @@ localStorage['dshSectionNav.bookmarks.v1']
 
 - Directory entries come from user turns; assistant heading parsing is not re-enabled in this version.
 - On a very narrow viewport the rail narrows to its minimum width and pins to the viewport edge; titles stay visible but truncate earlier.
-- Full-history loading stops when the Host has no more pages to return; sessions with unavailable older history cannot be expanded beyond what the Host serves.
-- A bookmark whose answer is outside the currently loaded session window is marked unavailable until that history page loads.
+- History paging stops when the Host has no more pages to return, or when the directory has been fully loaded; a turn older than that cannot be reached.
+- A bookmark pointing outside the rendered window still pages history on demand to reach its target.
 - Headings inside reasoning disclosures are ignored; sections belong to the assistant's answer text.
 - No cross-device bookmark sync and no server-side storage.
 

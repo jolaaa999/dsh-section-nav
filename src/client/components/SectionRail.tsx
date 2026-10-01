@@ -1,5 +1,6 @@
 import { useEffect, useRef, type CSSProperties } from "react";
 
+import { HISTORY_PAGE_TURNS } from "../../core/constants";
 import type { Section } from "../../core/types";
 import type { RailPosition } from "../../core/positionManager";
 import type { Translate } from "../locales";
@@ -10,6 +11,12 @@ interface SectionRailProps {
   bookmarkedSectionKeys: ReadonlySet<string>;
   bookmarkCount: number;
   drawerOpen: boolean;
+  /** Every older turn has been paged in; the load control can no longer help. */
+  historyComplete: boolean;
+  /** A history page is being fetched right now. */
+  historyLoading: boolean;
+  /** The reader asked for turns older than the rendered window. */
+  onReachTop(): void;
   onSectionSelect(section: Section): void;
   onToggleBookmark(section: Section): void;
   onToggleDrawer(): void;
@@ -28,6 +35,9 @@ export function SectionRail({
   bookmarkedSectionKeys,
   bookmarkCount,
   drawerOpen,
+  historyComplete,
+  historyLoading,
+  onReachTop,
   onSectionSelect,
   onToggleBookmark,
   onToggleDrawer,
@@ -40,6 +50,10 @@ export function SectionRail({
   // freshly opened session shows the latest turn, and turns false only once
   // the reader scrolls up to read older ones.
   const followTailRef = useRef(true);
+  // The callback changes on every render, so read it through a ref to keep the
+  // scroll listener mounted once for the lifetime of the list.
+  const reachTopRef = useRef(onReachTop);
+  reachTopRef.current = onReachTop;
 
   // Directory entries run oldest to newest, so a list too tall for the rail
   // pushes the newest turn below the fold — the one entry the reader is most
@@ -53,15 +67,58 @@ export function SectionRail({
     const handleScroll = (): void => {
       followTailRef.current = list.scrollHeight - list.scrollTop - list.clientHeight <= 24;
     };
+    // Scrolling up at the very top asks for older turns. A wheel event is
+    // required on top of the position check: once the list is already at
+    // scrollTop 0 it stops emitting scroll events, so position alone would
+    // fire once and then never again.
+    const handleWheel = (event: WheelEvent): void => {
+      if (event.deltaY < 0 && list.scrollTop <= 0) {
+        reachTopRef.current();
+      }
+    };
     list.addEventListener("scroll", handleScroll, { passive: true });
-    return () => list.removeEventListener("scroll", handleScroll);
+    list.addEventListener("wheel", handleWheel, { passive: true });
+    return () => {
+      list.removeEventListener("scroll", handleScroll);
+      list.removeEventListener("wheel", handleWheel);
+    };
   }, []);
 
   useEffect(() => {
     const list = listRef.current;
     if (list === null || !followTailRef.current) return;
     list.scrollTop = list.scrollHeight;
-  }, [lastSectionId, sections.length, position.mode, position.width, position.left]);
+  }, [lastSectionId, position.mode, position.width, position.left]);
+
+  // A load request prepends entries above the list, which pushes the entry the
+  // reader was reading downward. Re-anchor on the turn that used to sit at the
+  // top so the visible content stays put.
+  const previousHeadId = useRef(sections[0]?.id ?? null);
+  const previousHeadOffset = useRef(0);
+  useEffect(() => {
+    const list = listRef.current;
+    const head = sections[0]?.id ?? null;
+
+    if (list !== null && head !== previousHeadId.current) {
+      const anchor = previousHeadId.current === null
+        ? null
+        : list.querySelector<HTMLElement>(`[data-section-id="${previousHeadId.current}"]`);
+
+      if (anchor !== null) {
+        const offset = anchor.getBoundingClientRect().top - list.getBoundingClientRect().top;
+        list.scrollTop += offset - previousHeadOffset.current;
+      }
+
+      const nextAnchor = head === null
+        ? null
+        : list.querySelector<HTMLElement>(`[data-section-id="${head}"]`);
+      previousHeadOffset.current = nextAnchor === null
+        ? 0
+        : nextAnchor.getBoundingClientRect().top - list.getBoundingClientRect().top;
+    }
+
+    previousHeadId.current = head;
+  }, [sections]);
 
   if (position.mode === "hidden") {
     return null;
@@ -98,6 +155,30 @@ export function SectionRail({
     />
   );
 
+  // Lives inside the list as its first row so it only appears once the reader
+  // scrolls to the top, which is where asking for older turns makes sense.
+  const loadEarlierItem = (
+    <li className="section-rail-load-earlier-item">
+      <button
+        aria-label={
+          historyComplete
+            ? t("loadEarlierDone")
+            : t("loadEarlier", { count: HISTORY_PAGE_TURNS })
+        }
+        className="section-rail-load-earlier"
+        disabled={historyComplete || historyLoading}
+        onClick={onReachTop}
+        type="button"
+      >
+        {historyComplete
+          ? t("loadEarlierDone")
+          : historyLoading
+            ? t("loadEarlierPending")
+            : `↑ ${t("loadEarlier", { count: HISTORY_PAGE_TURNS })}`}
+      </button>
+    </li>
+  );
+
   return (
     <nav
       aria-label={t("sections")}
@@ -130,10 +211,12 @@ export function SectionRail({
         <div className="section-rail-empty">{t("emptySections")}</div>
       ) : turnMode ? (
         <ol className="section-rail-list" ref={listRef}>
+          {loadEarlierItem}
           {sections.map(renderItem)}
         </ol>
       ) : (
         <ol className="section-rail-list" ref={listRef}>
+          {loadEarlierItem}
           {groups.map((group) => {
             const isCurrent = group.key === currentGroupKey;
             if (!isCurrent) historyIndex += 1;

@@ -3,7 +3,7 @@ import { createRoot } from "react-dom/client";
 
 import type { Bookmark, Section } from "../core/types";
 import { createDshAdapter } from "../core/adapter";
-import { EXTENSION_ROOT_ID } from "../core/constants";
+import { EXTENSION_ROOT_ID, HISTORY_PAGE_TURNS, INITIAL_RAIL_TURNS } from "../core/constants";
 import { AnswerTracker, type ActiveAnswer } from "../core/answerTracker";
 import { recoverBookmarkTarget } from "../core/bookmarkRecovery";
 import { bookmarkMatchesSection, resolveBookmark } from "../core/bookmarkResolver";
@@ -131,6 +131,28 @@ export function startSectionNav(ctx: PluginContext): () => void {
   let historyLoadInFlight = false;
   let historyLoadPausedUntil = 0;
   /**
+   * How many turns the rail currently shows, counted back from the newest.
+   *
+   * The rail renders only this window of the loaded turns and grows it by
+   * HISTORY_PAGE_TURNS per request, so opening a long session does not page
+   * the whole transcript first.
+   */
+  let railTurnWindow = INITIAL_RAIL_TURNS;
+  /**
+   * Whether the rail is waiting on a history page.
+   *
+   * Set synchronously when a request starts so a second click cannot start a
+   * concurrent page while loadAllHistory is still awaiting its first step.
+   */
+  let railHistoryLoading = false;
+  /**
+   * Turns present in the merged directory, refreshed by updateActiveSections.
+   *
+   * Kept as state because render consults it on every pass to decide whether
+   * the rail has loaded every available turn.
+   */
+  let loadedTurnTotal = 0;
+  /**
    * Turn the reader last navigated to, restored after history paging.
    *
    * Paging older history must scroll to the top to reach the "load earlier"
@@ -163,6 +185,8 @@ export function startSectionNav(ctx: PluginContext): () => void {
           activeSectionId={activeSectionId}
           bookmarks={bookmarks}
           drawerOpen={drawerOpen}
+          historyComplete={historyExhausted && railTurnWindow >= loadedTurnCount()}
+          historyLoading={railHistoryLoading}
           onBookmarkDelete={(bookmark) => {
             if (!ensureCurrentConversation()) {
               return;
@@ -259,6 +283,7 @@ export function startSectionNav(ctx: PluginContext): () => void {
               })
               .catch(handleBookmarkError);
           }}
+          onRailReachTop={loadOlderTurns}
           position={railPosition}
           resolvingBookmarkIds={resolvingBookmarkIds}
           sections={sections}
@@ -753,6 +778,33 @@ export function startSectionNav(ctx: PluginContext): () => void {
     return true;
   };
 
+  /** Turns currently available in the loaded directory, ignoring bookmarks. */
+  const loadedTurnCount = (): number => loadedTurnTotal;
+
+  /**
+   * Grow the rail's turn window by one page and page in whatever backs it.
+   *
+   * Driven by the rail's load control and by upward scrolling at the top of
+   * the list — the two signals that the reader wants turns older than the
+   * window.
+   */
+  const loadOlderTurns = (): void => {
+    if (destroyed || railHistoryLoading) {
+      return;
+    }
+
+    // The window already covers every loaded turn and the Host has no more.
+    if (historyExhausted && railTurnWindow >= loadedTurnCount()) {
+      return;
+    }
+
+    railTurnWindow += HISTORY_PAGE_TURNS;
+    railHistoryLoading = true;
+    updateActiveSections();
+    render();
+    void loadAllHistory();
+  };
+
   const loadAllHistory = async (): Promise<void> => {
     if (
       destroyed ||
@@ -765,6 +817,9 @@ export function startSectionNav(ctx: PluginContext): () => void {
 
     historyLoadInFlight = true;
     const generation = ++historyLoadGeneration;
+    // Only page until the rail's window is backed by real entries; the rest of
+    // the session loads on later requests.
+    const requiredTurns = railTurnWindow;
 
     try {
       for (let page = 0; page < MAX_HISTORY_PAGES; page += 1) {
@@ -773,6 +828,10 @@ export function startSectionNav(ctx: PluginContext): () => void {
           generation !== historyLoadGeneration ||
           performance.now() < historyLoadPausedUntil
         ) {
+          return;
+        }
+
+        if (loadedTurnCount() >= requiredTurns) {
           return;
         }
 
@@ -839,9 +898,12 @@ export function startSectionNav(ctx: PluginContext): () => void {
       }
     } finally {
       historyLoadInFlight = false;
+      railHistoryLoading = false;
       // Any exit path (page cap, failure, superseded generation) still owes
-      // the reader a final restore.
+      // the reader a final restore, and the rail a re-render so the load
+      // control leaves its pending state.
       restoreScrollTarget();
+      updateActiveSections();
     }
   };
 
@@ -859,6 +921,7 @@ export function startSectionNav(ctx: PluginContext): () => void {
 
     const domSections = parseAllSections();
     const nextSections = mergeSections(baseSections, domSections);
+    loadedTurnTotal = nextSections.length;
 
     // Track active sections only from live DOM rows. Cached rows have no
     // connected element and would otherwise poison the reading-line math.
@@ -884,11 +947,15 @@ export function startSectionNav(ctx: PluginContext): () => void {
       }
     }
 
-    if (sectionsEqual(sections, nextSections)) {
+    // The rail shows only the newest railTurnWindow entries. Older loaded
+    // turns stay out of the list until a load request grows the window.
+    const windowedSections = nextSections.slice(-railTurnWindow);
+
+    if (sectionsEqual(sections, windowedSections)) {
       return;
     }
 
-    sections = nextSections;
+    sections = windowedSections;
     cacheBookmarkTargets(sections);
     render();
   };
@@ -990,9 +1057,6 @@ export function startSectionNav(ctx: PluginContext): () => void {
     render();
     void loadBookmarks(conversationKey, conversationVersion);
     scheduleMessageRefreshes();
-    if (!historyExhausted) {
-      window.setTimeout(() => { void loadAllHistory(); }, 800);
-    }
 
     if (pendingDomSignatureTimerId !== null) {
       window.clearTimeout(pendingDomSignatureTimerId);
@@ -1073,9 +1137,6 @@ export function startSectionNav(ctx: PluginContext): () => void {
   routeWatcher.start();
   refreshPosition();
   updateActiveSections();
-  if (!historyExhausted) {
-    window.setTimeout(() => { void loadAllHistory(); }, 800);
-  }
   watchdogTimerId = window.setInterval(() => {
     if (destroyed || routeWatcher.sync()) {
       return;
@@ -1085,7 +1146,8 @@ export function startSectionNav(ctx: PluginContext): () => void {
     answerTracker.refreshMessages();
     updateActiveSections();
     refreshPosition();
-    void loadAllHistory();
+    // The watchdog keeps the rail in sync but must not page history: older
+    // turns load only when the reader asks for them.
   }, 1000);
   document.addEventListener("click", handleDocumentClick);
   document.addEventListener("pointerdown", handleDocumentPointerDown, true);

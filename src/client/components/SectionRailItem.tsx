@@ -53,6 +53,7 @@ export function SectionRailItem({
   return (
     <li
       className="section-rail-list-item"
+      data-section-id={section.id}
       onMouseEnter={showCard}
       onMouseLeave={hideCard}
       style={depthStyle}
