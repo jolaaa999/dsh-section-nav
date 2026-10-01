@@ -10,6 +10,8 @@ interface SectionRailProps {
   activeSectionId: string | null;
   bookmarkedSectionKeys: ReadonlySet<string>;
   bookmarkCount: number;
+  /** Whether the reader collapsed the rail into its edge button. */
+  collapsed: boolean;
   drawerOpen: boolean;
   /** Every older turn has been paged in; the load control can no longer help. */
   historyComplete: boolean;
@@ -19,6 +21,7 @@ interface SectionRailProps {
   onReachTop(): void;
   onSectionSelect(section: Section): void;
   onToggleBookmark(section: Section): void;
+  onToggleCollapsed(): void;
   onToggleDrawer(): void;
   position: RailPosition;
   sections: Section[];
@@ -34,12 +37,14 @@ export function SectionRail({
   activeSectionId,
   bookmarkedSectionKeys,
   bookmarkCount,
+  collapsed,
   drawerOpen,
   historyComplete,
   historyLoading,
   onReachTop,
   onSectionSelect,
   onToggleBookmark,
+  onToggleCollapsed,
   onToggleDrawer,
   position,
   sections,
@@ -179,6 +184,25 @@ export function SectionRail({
     </li>
   );
 
+  // Collapsed: the rail keeps a single edge button as its only affordance, so
+  // the reader can always bring it back. Anchored to the rail's own right edge
+  // so it stays where the rail was rather than jumping to the viewport edge.
+  if (collapsed) {
+    return (
+      <button
+        aria-expanded="false"
+        aria-label={t("expandRail")}
+        className="section-rail-expand"
+        onClick={onToggleCollapsed}
+        style={{ left: `${position.left + position.width}px` }}
+        title={t("expandRail")}
+        type="button"
+      >
+        <span aria-hidden="true">‹</span>
+      </button>
+    );
+  }
+
   return (
     <nav
       aria-label={t("sections")}
@@ -205,6 +229,15 @@ export function SectionRail({
         >
           <span aria-hidden="true">{bookmarkCount > 0 ? "★" : "☆"}</span>
           {bookmarkCount > 0 ? <span>{bookmarkCount}</span> : null}
+        </button>
+        <button
+          aria-label={t("collapseRail")}
+          className="section-rail-collapse"
+          onClick={onToggleCollapsed}
+          title={t("collapseRail")}
+          type="button"
+        >
+          <span aria-hidden="true">›</span>
         </button>
       </div>
       {sections.length === 0 ? (

@@ -32,6 +32,8 @@ export const zh: Record<string, string> = {
   loadEarlier: '加载更早的对话（{count} 轮）',
   loadEarlierPending: '正在加载…',
   loadEarlierDone: '没有更早的对话了',
+  collapseRail: '收起目录',
+  expandRail: '展开目录',
 }
 
 /** English copy, matching the original Section Nav wording. */
@@ -60,6 +62,8 @@ export const en: Record<string, string> = {
   loadEarlier: 'Load {count} older turns',
   loadEarlierPending: 'Loading…',
   loadEarlierDone: 'No older turns left',
+  collapseRail: 'Collapse directory',
+  expandRail: 'Expand directory',
 }
 
 /** Minimal fallback used when the locale service is unavailable. */

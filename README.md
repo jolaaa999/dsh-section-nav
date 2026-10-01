@@ -12,7 +12,8 @@ A DeepSeek Harness plugin that brings the **Section Nav for ChatGPT** experience
 - **Reading-position tracking** — the active section follows the transcript reading line, with the same hysteresis behavior as the original extension.
 - **One-click section navigation** — clicking a heading scrolls to it and briefly highlights the target.
 - **Local chapter bookmarks** — bookmark any section, reopen the bookmark drawer, and jump back later.
-- **Always-visible rail** — the rail never collapses into a marker strip: entries keep their titles, and the width follows the available gutter, narrowing as the window narrows.
+- **Always-visible rail** — the rail never collapses into a marker strip on its own: entries keep their titles, and the width follows the available gutter, narrowing as the window narrows.
+- **Manual collapse** — the collapse control in the rail heading stows the rail into a small edge button, and clicking that button brings it back. The choice is remembered across reloads and Sessions.
 - **Two-part hover card** — hovering a rail entry shows the user's request on the main line and a two-line excerpt of that turn's final model answer beneath it, styled with the Host's tooltip tokens.
 - **Navigation that holds** — paging older history no longer drags the viewport away from the entry you just clicked; the rail restores your target once pagination settles.
 - **Lazy history** — the rail opens with the newest 8 turns and shows a load control at the top of the list; click it, or keep scrolling up, to page in 8 older turns at a time. The control reports when no older turns remain.

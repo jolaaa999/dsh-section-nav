@@ -4,6 +4,7 @@ import { createRoot } from "react-dom/client";
 import type { Bookmark, Section } from "../core/types";
 import { createDshAdapter } from "../core/adapter";
 import { EXTENSION_ROOT_ID, HISTORY_PAGE_TURNS, INITIAL_RAIL_TURNS } from "../core/constants";
+import { readRailPrefs, writeRailPrefs } from "../core/railPrefs";
 import { AnswerTracker, type ActiveAnswer } from "../core/answerTracker";
 import { recoverBookmarkTarget } from "../core/bookmarkRecovery";
 import { bookmarkMatchesSection, resolveBookmark } from "../core/bookmarkResolver";
@@ -118,6 +119,9 @@ export function startSectionNav(ctx: PluginContext): () => void {
   let conversationVersion = 0;
   let destroyed = false;
   let drawerOpen = false;
+  // Restored from storage so the reader's choice survives reloads and applies
+  // to every Session, not just the one it was made in.
+  let railCollapsed = readRailPrefs().collapsed;
   let railPosition: RailPosition = initialRailPosition(
     document.documentElement.clientWidth || window.innerWidth,
   );
@@ -184,6 +188,7 @@ export function startSectionNav(ctx: PluginContext): () => void {
         <App
           activeSectionId={activeSectionId}
           bookmarks={bookmarks}
+          collapsed={railCollapsed}
           drawerOpen={drawerOpen}
           historyComplete={historyExhausted && railTurnWindow >= loadedTurnCount()}
           historyLoading={railHistoryLoading}
@@ -282,6 +287,11 @@ export function startSectionNav(ctx: PluginContext): () => void {
                 updateBookmarksForContext(nextBookmarks, operationKey, operationVersion);
               })
               .catch(handleBookmarkError);
+          }}
+          onToggleCollapsed={() => {
+            railCollapsed = !railCollapsed;
+            writeRailPrefs({ collapsed: railCollapsed });
+            render();
           }}
           onRailReachTop={loadOlderTurns}
           position={railPosition}

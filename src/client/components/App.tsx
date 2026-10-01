@@ -8,6 +8,7 @@ import { SectionRail } from "./SectionRail";
 interface AppProps {
   activeSectionId: string | null;
   bookmarks: Bookmark[];
+  collapsed: boolean;
   drawerOpen: boolean;
   historyComplete: boolean;
   historyLoading: boolean;
@@ -18,6 +19,7 @@ interface AppProps {
   onRailReachTop(): void;
   onSectionSelect(section: Section): void;
   onToggleBookmark(section: Section): void;
+  onToggleCollapsed(): void;
   position: RailPosition;
   resolvingBookmarkIds: ReadonlySet<string>;
   sections: Section[];
@@ -28,6 +30,7 @@ interface AppProps {
 export function App({
   activeSectionId,
   bookmarks,
+  collapsed,
   drawerOpen,
   historyComplete,
   historyLoading,
@@ -38,6 +41,7 @@ export function App({
   onRailReachTop,
   onSectionSelect,
   onToggleBookmark,
+  onToggleCollapsed,
   position,
   resolvingBookmarkIds,
   sections,
@@ -59,12 +63,14 @@ export function App({
         activeSectionId={activeSectionId}
         bookmarkedSectionKeys={bookmarkedSectionKeys}
         bookmarkCount={bookmarks.length}
+        collapsed={collapsed}
         drawerOpen={drawerOpen}
         historyComplete={historyComplete}
         historyLoading={historyLoading}
         onReachTop={onRailReachTop}
         onSectionSelect={onSectionSelect}
         onToggleBookmark={onToggleBookmark}
+        onToggleCollapsed={onToggleCollapsed}
         onToggleDrawer={onDrawerToggle}
         position={position}
         sections={sections}
